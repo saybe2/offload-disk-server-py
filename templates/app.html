@@ -96,8 +96,36 @@
         
         <!-- Main Content -->
         <div class="col-md-9 col-lg-10">
+            <!-- Search Bar -->
+            <div class="card mb-3">
+                <div class="card-body py-2">
+                    <div class="input-group">
+                        <span class="input-group-text bg-transparent border-end-0">
+                            <i class="bi bi-search text-muted"></i>
+                        </span>
+                        <input type="text" 
+                               class="form-control border-start-0" 
+                               id="searchInput" 
+                               placeholder="Поиск файлов и папок..."
+                               autocomplete="off">
+                        <button class="btn btn-outline-secondary d-none" id="clearSearchBtn" title="Очистить">
+                            <i class="bi bi-x"></i>
+                        </button>
+                        <select class="form-select" id="searchCategory" style="max-width: 180px;">
+                            <option value="">Все типы</option>
+                            <option value="images">Изображения</option>
+                            <option value="videos">Видео</option>
+                            <option value="audio">Аудио</option>
+                            <option value="documents">Документы</option>
+                            <option value="archives">Архивы</option>
+                            <option value="code">Код</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Breadcrumb -->
-            <nav aria-label="breadcrumb" class="mb-3">
+            <nav aria-label="breadcrumb" class="mb-3" id="breadcrumbContainer">
                 <ol class="breadcrumb" id="breadcrumb">
                     <li class="breadcrumb-item">
                         <a href="#" data-folder-id="" class="text-decoration-none">
@@ -239,16 +267,99 @@
     <a class="dropdown-item" href="#" id="ctxDownload">
         <i class="bi bi-download me-2"></i>Скачать
     </a>
+    <a class="dropdown-item" href="#" id="ctxShare">
+        <i class="bi bi-share me-2"></i>Поделиться
+    </a>
     <a class="dropdown-item" href="#" id="ctxRename">
         <i class="bi bi-pencil me-2"></i>Переименовать
-    </a>
-    <a class="dropdown-item" href="#" id="ctxMove">
-        <i class="bi bi-folder-symlink me-2"></i>Переместить
     </a>
     <div class="dropdown-divider"></div>
     <a class="dropdown-item text-danger" href="#" id="ctxDelete">
         <i class="bi bi-trash me-2"></i>Удалить
     </a>
+</div>
+
+<!-- Share Modal -->
+<div class="modal fade" id="shareModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <i class="bi bi-share me-2"></i>Поделиться файлом
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="shareCreate">
+                    <p class="text-muted">Файл: <strong id="shareFileName"></strong></p>
+                    
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Срок действия (дней)</label>
+                            <input type="number" 
+                                   class="form-control" 
+                                   id="shareExpiresIn" 
+                                   value="0" 
+                                   min="0"
+                                   placeholder="0 = бессрочно">
+                            <small class="text-muted">0 — бессрочно</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Лимит скачиваний</label>
+                            <input type="number" 
+                                   class="form-control" 
+                                   id="shareMaxDownloads" 
+                                   value="0" 
+                                   min="0"
+                                   placeholder="0 = без лимита">
+                            <small class="text-muted">0 — без лимита</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Пароль (опционально)</label>
+                        <input type="password" 
+                               class="form-control" 
+                               id="sharePassword" 
+                               placeholder="Оставьте пустым, если без пароля">
+                    </div>
+                    
+                    <button class="btn btn-primary w-100" id="createShareBtn">
+                        <i class="bi bi-link-45deg me-2"></i>Создать ссылку
+                    </button>
+                </div>
+                
+                <!-- Результат создания -->
+                <div id="shareResult" class="d-none">
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle me-2"></i>Ссылка создана!
+                    </div>
+                    
+                    <label class="form-label">URL для скачивания:</label>
+                    <div class="input-group mb-3">
+                        <input type="text" 
+                               class="form-control" 
+                               id="shareUrlOutput" 
+                               readonly>
+                        <button class="btn btn-primary" id="copyShareUrlBtn" title="Копировать">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                    
+                    <button class="btn btn-secondary w-100" id="newShareBtn">
+                        <i class="bi bi-plus me-2"></i>Создать ещё одну
+                    </button>
+                </div>
+                
+                <!-- Существующие ссылки -->
+                <hr class="border-secondary">
+                <h6 class="mt-3">Существующие ссылки</h6>
+                <div id="existingShares" class="mt-2">
+                    <p class="text-muted small">Загрузка...</p>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 {% endblock %}

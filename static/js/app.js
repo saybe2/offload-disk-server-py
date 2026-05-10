@@ -9,7 +9,10 @@ const state = {
     files: [],
     folders: [],
     selectedItem: null,
-    viewMode: 'grid'  // 'grid' или 'list'
+    viewMode: 'grid',  // 'grid' или 'list'
+    searchActive: false,
+    searchQuery: '',
+    searchTimer: null
 };
 
 // API методы
@@ -100,6 +103,38 @@ const api = {
             method: 'PATCH',
             body: JSON.stringify({ name })
         });
+    },
+    
+    // Поиск
+    async search(query, category = '') {
+        const params = new URLSearchParams();
+        if (query) params.set('q', query);
+        if (category) params.set('category', category);
+        return this.request(`/api/search?${params.toString()}`);
+    },
+    
+    // Публичные ссылки
+    async createShare(fileId, options = {}) {
+        return this.request(`/api/files/${fileId}/share`, {
+            method: 'POST',
+            body: JSON.stringify({
+                password: options.password || '',
+                expires_in_days: options.expiresInDays || 0,
+                max_downloads: options.maxDownloads || 0
+            })
+        });
+    },
+    
+    async getFileShares(fileId) {
+        return this.request(`/api/files/${fileId}/shares`);
+    },
+    
+    async deleteShare(shareId) {
+        return this.request(`/api/shares/${shareId}`, { method: 'DELETE' });
+    },
+    
+    async toggleShare(shareId) {
+        return this.request(`/api/shares/${shareId}/toggle`, { method: 'PATCH' });
     },
     
     // Статистика
@@ -493,6 +528,313 @@ const app = {
         
         // Смена пароля
         document.getElementById('changePasswordBtn').addEventListener('click', () => this.changePassword());
+        
+        // Поиск
+        const searchInput = document.getElementById('searchInput');
+        const searchCategory = document.getElementById('searchCategory');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+        
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                clearTimeout(state.searchTimer);
+                const query = searchInput.value.trim();
+                
+                if (query) {
+                    clearSearchBtn.classList.remove('d-none');
+                } else {
+                    clearSearchBtn.classList.add('d-none');
+                }
+                
+                // Дебаунс 300мс
+                state.searchTimer = setTimeout(() => {
+                    if (query || searchCategory.value) {
+                        this.performSearch();
+                    } else {
+                        this.exitSearch();
+                    }
+                }, 300);
+            });
+            
+            // Поиск по Enter
+            searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    clearTimeout(state.searchTimer);
+                    this.performSearch();
+                }
+            });
+        }
+        
+        if (searchCategory) {
+            searchCategory.addEventListener('change', () => {
+                if (searchInput.value.trim() || searchCategory.value) {
+                    this.performSearch();
+                } else {
+                    this.exitSearch();
+                }
+            });
+        }
+        
+        if (clearSearchBtn) {
+            clearSearchBtn.addEventListener('click', () => {
+                searchInput.value = '';
+                searchCategory.value = '';
+                clearSearchBtn.classList.add('d-none');
+                this.exitSearch();
+            });
+        }
+        
+        // Контекстное меню "Поделиться"
+        const ctxShare = document.getElementById('ctxShare');
+        if (ctxShare) {
+            ctxShare.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (state.selectedItem?.type === 'file') {
+                    this.openShareModal(state.selectedItem.id);
+                }
+                this.hideContextMenu();
+            });
+        }
+        
+        // Создание ссылки
+        const createShareBtn = document.getElementById('createShareBtn');
+        if (createShareBtn) {
+            createShareBtn.addEventListener('click', () => this.createShareLink());
+        }
+        
+        // Копирование ссылки
+        const copyShareUrlBtn = document.getElementById('copyShareUrlBtn');
+        if (copyShareUrlBtn) {
+            copyShareUrlBtn.addEventListener('click', () => this.copyShareUrl());
+        }
+        
+        // Новая ссылка
+        const newShareBtn = document.getElementById('newShareBtn');
+        if (newShareBtn) {
+            newShareBtn.addEventListener('click', () => {
+                document.getElementById('shareCreate').classList.remove('d-none');
+                document.getElementById('shareResult').classList.add('d-none');
+            });
+        }
+    },
+    
+    /**
+     * Выполняет поиск по файлам и папкам
+     */
+    async performSearch() {
+        const searchInput = document.getElementById('searchInput');
+        const searchCategory = document.getElementById('searchCategory');
+        const query = searchInput.value.trim();
+        const category = searchCategory.value;
+        
+        state.searchActive = true;
+        state.searchQuery = query;
+        
+        // Скрываем breadcrumb во время поиска
+        document.getElementById('breadcrumbContainer').style.display = 'none';
+        
+        ui.showLoading(true);
+        
+        try {
+            const result = await api.search(query, category);
+            
+            state.folders = result.folders || [];
+            state.files = result.files || [];
+            
+            ui.showLoading(false);
+            
+            if (result.total === 0) {
+                ui.showEmpty(true);
+                ui.showToast(`Ничего не найдено по запросу: "${query}"`, 'info');
+            } else {
+                ui.renderContent(state.folders, state.files);
+                ui.showToast(`Найдено: ${result.total}`, 'success');
+            }
+        } catch (error) {
+            ui.showLoading(false);
+            ui.showToast('Ошибка поиска: ' + error.message, 'error');
+        }
+    },
+    
+    /**
+     * Выходит из режима поиска
+     */
+    exitSearch() {
+        state.searchActive = false;
+        state.searchQuery = '';
+        document.getElementById('breadcrumbContainer').style.display = '';
+        this.loadContent(state.currentFolderId);
+    },
+    
+    /**
+     * Открывает модальное окно для создания публичной ссылки
+     */
+    async openShareModal(fileId) {
+        // Находим файл в state
+        const file = state.files.find(f => String(f.id) === String(fileId));
+        if (!file) return;
+        
+        state.shareFileId = fileId;
+        document.getElementById('shareFileName').textContent = file.original_name;
+        
+        // Сбрасываем форму
+        document.getElementById('shareCreate').classList.remove('d-none');
+        document.getElementById('shareResult').classList.add('d-none');
+        document.getElementById('shareExpiresIn').value = 0;
+        document.getElementById('shareMaxDownloads').value = 0;
+        document.getElementById('sharePassword').value = '';
+        
+        // Загружаем существующие ссылки
+        await this.loadExistingShares(fileId);
+        
+        const modal = new bootstrap.Modal(document.getElementById('shareModal'));
+        modal.show();
+    },
+    
+    /**
+     * Загружает существующие ссылки для файла
+     */
+    async loadExistingShares(fileId) {
+        const container = document.getElementById('existingShares');
+        container.innerHTML = '<p class="text-muted small">Загрузка...</p>';
+        
+        try {
+            const result = await api.getFileShares(fileId);
+            
+            if (result.count === 0) {
+                container.innerHTML = '<p class="text-muted small">Нет активных ссылок</p>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            result.shares.forEach(share => {
+                const item = document.createElement('div');
+                item.className = 'card bg-secondary bg-opacity-25 mb-2';
+                
+                const expiresText = share.expires_at 
+                    ? `до ${new Date(share.expires_at).toLocaleDateString('ru')}` 
+                    : 'бессрочно';
+                
+                const downloadsText = share.max_downloads > 0
+                    ? `${share.download_count}/${share.max_downloads}`
+                    : `${share.download_count} (без лимита)`;
+                
+                const statusBadge = share.is_active 
+                    ? '<span class="badge bg-success">Активна</span>'
+                    : '<span class="badge bg-secondary">Отключена</span>';
+                
+                const passwordIcon = share.has_password 
+                    ? '<i class="bi bi-lock-fill text-warning ms-2" title="Защищена паролем"></i>' 
+                    : '';
+                
+                item.innerHTML = `
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="flex-grow-1 me-2" style="overflow: hidden;">
+                                <div class="d-flex align-items-center mb-1">
+                                    ${statusBadge}
+                                    ${passwordIcon}
+                                    <small class="text-muted ms-2">${expiresText}</small>
+                                </div>
+                                <small class="text-muted">
+                                    <i class="bi bi-download me-1"></i>${downloadsText}
+                                </small>
+                                <div class="text-truncate small mt-1">
+                                    <code>${share.url}</code>
+                                </div>
+                            </div>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-light" onclick="navigator.clipboard.writeText('${share.url}'); ui.showToast('Скопировано', 'success')" title="Копировать">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                                <button class="btn btn-outline-warning" onclick="app.toggleShare(${share.id})" title="${share.is_active ? 'Отключить' : 'Включить'}">
+                                    <i class="bi bi-${share.is_active ? 'pause' : 'play'}"></i>
+                                </button>
+                                <button class="btn btn-outline-danger" onclick="app.deleteShare(${share.id})" title="Удалить">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        } catch (error) {
+            container.innerHTML = `<p class="text-danger small">Ошибка: ${error.message}</p>`;
+        }
+    },
+    
+    /**
+     * Создаёт публичную ссылку
+     */
+    async createShareLink() {
+        const expiresIn = parseInt(document.getElementById('shareExpiresIn').value, 10) || 0;
+        const maxDownloads = parseInt(document.getElementById('shareMaxDownloads').value, 10) || 0;
+        const password = document.getElementById('sharePassword').value;
+        
+        try {
+            const result = await api.createShare(state.shareFileId, {
+                expiresInDays: expiresIn,
+                maxDownloads: maxDownloads,
+                password: password
+            });
+            
+            // Показываем результат
+            document.getElementById('shareUrlOutput').value = result.share.url;
+            document.getElementById('shareCreate').classList.add('d-none');
+            document.getElementById('shareResult').classList.remove('d-none');
+            
+            // Перезагружаем список существующих ссылок
+            await this.loadExistingShares(state.shareFileId);
+            
+            ui.showToast('Ссылка создана', 'success');
+        } catch (error) {
+            ui.showToast('Ошибка: ' + error.message, 'error');
+        }
+    },
+    
+    /**
+     * Копирует URL ссылки в буфер обмена
+     */
+    async copyShareUrl() {
+        const url = document.getElementById('shareUrlOutput').value;
+        try {
+            await navigator.clipboard.writeText(url);
+            ui.showToast('Ссылка скопирована', 'success');
+        } catch (error) {
+            // Fallback для старых браузеров
+            const input = document.getElementById('shareUrlOutput');
+            input.select();
+            document.execCommand('copy');
+            ui.showToast('Ссылка скопирована', 'success');
+        }
+    },
+    
+    /**
+     * Переключает активность ссылки
+     */
+    async toggleShare(shareId) {
+        try {
+            await api.toggleShare(shareId);
+            await this.loadExistingShares(state.shareFileId);
+            ui.showToast('Статус изменён', 'success');
+        } catch (error) {
+            ui.showToast('Ошибка: ' + error.message, 'error');
+        }
+    },
+    
+    /**
+     * Удаляет публичную ссылку
+     */
+    async deleteShare(shareId) {
+        if (!confirm('Удалить публичную ссылку?')) return;
+        
+        try {
+            await api.deleteShare(shareId);
+            await this.loadExistingShares(state.shareFileId);
+            ui.showToast('Ссылка удалена', 'success');
+        } catch (error) {
+            ui.showToast('Ошибка: ' + error.message, 'error');
+        }
     },
     
     /**
@@ -628,8 +970,11 @@ const app = {
         menu.style.top = y + 'px';
         
         // Скрываем/показываем пункты в зависимости от типа
+        const isFile = state.selectedItem?.type === 'file';
         const downloadItem = document.getElementById('ctxDownload');
-        downloadItem.style.display = state.selectedItem?.type === 'file' ? 'block' : 'none';
+        const shareItem = document.getElementById('ctxShare');
+        if (downloadItem) downloadItem.style.display = isFile ? 'block' : 'none';
+        if (shareItem) shareItem.style.display = isFile ? 'block' : 'none';
     },
     
     /**

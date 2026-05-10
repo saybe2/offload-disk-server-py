@@ -15,8 +15,18 @@ class Config:
     # Flask настройки
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     
-    # База данных
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:///data/storage.db')
+    # Директории (определяем до БД, чтобы использовать в путях)
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_DIR = os.path.join(BASE_DIR, 'data')
+    UPLOAD_TEMP_DIR = os.path.join(DATA_DIR, 'temp')
+    
+    # Создаём директории сразу при импорте
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(UPLOAD_TEMP_DIR, exist_ok=True)
+    
+    # База данных (используем абсолютный путь для надёжности)
+    _default_db = f'sqlite:///{os.path.join(DATA_DIR, "storage.db")}'
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', _default_db)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Шифрование
@@ -32,11 +42,6 @@ class Config:
     # Размер чанка для разбиения больших файлов
     CHUNK_SIZE_MB = int(os.getenv('CHUNK_SIZE_MB', '8'))
     CHUNK_SIZE_BYTES = CHUNK_SIZE_MB * 1024 * 1024
-    
-    # Директории
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    DATA_DIR = os.path.join(BASE_DIR, 'data')
-    UPLOAD_TEMP_DIR = os.path.join(DATA_DIR, 'temp')
     
     @classmethod
     def init_dirs(cls):

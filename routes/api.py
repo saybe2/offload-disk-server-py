@@ -6,7 +6,9 @@ import tempfile
 from flask import Blueprint, request, jsonify, send_file, current_app
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
-from models import db, File, Folder, User
+from datetime import datetime, timedelta
+from sqlalchemy import or_
+from models import db, File, Folder, User, Share
 from services.storage import StorageService
 from config import Config
 
@@ -29,12 +31,16 @@ def list_files():
     Query params:
         folder_id: ID папки (опционально, null = корень)
         status: Фильтр по статусу (опционально)
+        sort: Поле сортировки (name/date/size/downloads)
+        order: Направление сортировки (asc/desc)
     
     Returns:
         JSON список файлов
     """
     folder_id = request.args.get('folder_id', type=int)
     status = request.args.get('status')
+    sort_field = request.args.get('sort', 'date')
+    sort_order = request.args.get('order', 'desc')
     
     query = File.query.filter_by(
         user_id=current_user.id,
@@ -49,11 +55,115 @@ def list_files():
     if status:
         query = query.filter_by(status=status)
     
-    files = query.order_by(File.created_at.desc()).all()
+    # Применяем сортировку
+    sort_columns = {
+        'name': File.original_name,
+        'date': File.created_at,
+        'size': File.size,
+        'downloads': File.download_count
+    }
+    sort_column = sort_columns.get(sort_field, File.created_at)
+    if sort_order == 'asc':
+        query = query.order_by(sort_column.asc())
+    else:
+        query = query.order_by(sort_column.desc())
+    
+    files = query.all()
     
     return jsonify({
         'files': [f.to_dict() for f in files],
         'count': len(files)
+    })
+
+
+@api_bp.route('/search', methods=['GET'])
+@login_required
+def search():
+    """
+    Поиск по файлам и папкам пользователя.
+    
+    Query params:
+        q: Поисковая строка
+        type: Тип результатов ('files', 'folders', 'all')
+        category: Категория файлов (images, videos, audio, documents, archives)
+        min_size: Минимальный размер в байтах
+        max_size: Максимальный размер в байтах
+        limit: Максимальное количество результатов (по умолчанию 50)
+    
+    Returns:
+        JSON со списком найденных файлов и папок
+    """
+    query_str = request.args.get('q', '').strip()
+    search_type = request.args.get('type', 'all')
+    category = request.args.get('category')
+    min_size = request.args.get('min_size', type=int)
+    max_size = request.args.get('max_size', type=int)
+    limit = min(request.args.get('limit', 50, type=int), 200)
+    
+    if not query_str and not category and min_size is None and max_size is None:
+        return jsonify({
+            'files': [],
+            'folders': [],
+            'total': 0,
+            'query': query_str
+        })
+    
+    results = {'files': [], 'folders': []}
+    
+    # Поиск файлов
+    if search_type in ('files', 'all'):
+        files_query = File.query.filter_by(
+            user_id=current_user.id,
+            deleted_at=None
+        )
+        
+        # Поиск по имени (регистронезависимый)
+        if query_str:
+            search_pattern = f'%{query_str}%'
+            files_query = files_query.filter(
+                or_(
+                    File.original_name.ilike(search_pattern),
+                    File.name.ilike(search_pattern)
+                )
+            )
+        
+        # Фильтр по категории файла
+        if category:
+            from services.file_utils import ALLOWED_EXTENSIONS
+            extensions = ALLOWED_EXTENSIONS.get(category, set())
+            if extensions:
+                # Создаём список условий для всех расширений категории
+                conditions = [
+                    File.original_name.ilike(f'%.{ext}')
+                    for ext in extensions
+                ]
+                files_query = files_query.filter(or_(*conditions))
+        
+        # Фильтры размера
+        if min_size is not None:
+            files_query = files_query.filter(File.size >= min_size)
+        if max_size is not None:
+            files_query = files_query.filter(File.size <= max_size)
+        
+        files = files_query.order_by(File.created_at.desc()).limit(limit).all()
+        results['files'] = [f.to_dict() for f in files]
+    
+    # Поиск папок
+    if search_type in ('folders', 'all') and query_str:
+        folders_query = Folder.query.filter_by(
+            user_id=current_user.id
+        ).filter(
+            Folder.name.ilike(f'%{query_str}%')
+        )
+        
+        folders = folders_query.order_by(Folder.name).limit(limit).all()
+        results['folders'] = [f.to_dict(include_counts=True) for f in folders]
+    
+    return jsonify({
+        'files': results['files'],
+        'folders': results['folders'],
+        'total': len(results['files']) + len(results['folders']),
+        'query': query_str
     })
 
 
@@ -501,4 +611,152 @@ def get_stats():
         'files_count': files_count,
         'folders_count': folders_count,
         'quota': current_user.get_quota_info()
+    })
+
+
+# ==================== ПУБЛИЧНЫЕ ССЫЛКИ ====================
+
+@api_bp.route('/files/<int:file_id>/share', methods=['POST'])
+@login_required
+def create_share(file_id):
+    """
+    Создаёт публичную ссылку на файл.
+    
+    Body params:
+        password: Опциональный пароль для доступа
+        expires_in_days: Срок действия в днях (0 = бессрочно)
+        max_downloads: Лимит скачиваний (0 = безлимит)
+    
+    Returns:
+        JSON с информацией о созданной ссылке
+    """
+    file_record = File.query.filter_by(
+        id=file_id,
+        user_id=current_user.id,
+        deleted_at=None
+    ).first()
+    
+    if not file_record:
+        return jsonify({'error': 'Файл не найден'}), 404
+    
+    if not file_record.is_ready():
+        return jsonify({'error': 'Файл ещё не готов для шаринга'}), 400
+    
+    data = request.get_json() or {}
+    password = data.get('password', '')
+    expires_in_days = data.get('expires_in_days', 0)
+    max_downloads = data.get('max_downloads', 0)
+    
+    # Создаём уникальный токен
+    token = Share.generate_token()
+    while Share.query.filter_by(token=token).first():
+        token = Share.generate_token()
+    
+    # Создаём ссылку
+    share = Share(
+        token=token,
+        file_id=file_record.id,
+        user_id=current_user.id,
+        max_downloads=max(0, int(max_downloads or 0))
+    )
+    
+    # Устанавливаем срок действия
+    if expires_in_days and int(expires_in_days) > 0:
+        share.expires_at = datetime.utcnow() + timedelta(days=int(expires_in_days))
+    
+    # Устанавливаем пароль
+    if password:
+        share.set_password(password)
+    
+    db.session.add(share)
+    db.session.commit()
+    
+    # Формируем полный URL
+    base_url = request.host_url.rstrip('/')
+    
+    return jsonify({
+        'success': True,
+        'share': share.to_dict(base_url=base_url)
+    }), 201
+
+
+@api_bp.route('/files/<int:file_id>/shares', methods=['GET'])
+@login_required
+def list_file_shares(file_id):
+    """Возвращает все публичные ссылки на файл."""
+    file_record = File.query.filter_by(
+        id=file_id,
+        user_id=current_user.id,
+        deleted_at=None
+    ).first()
+    
+    if not file_record:
+        return jsonify({'error': 'Файл не найден'}), 404
+    
+    shares = Share.query.filter_by(file_id=file_record.id).order_by(
+        Share.created_at.desc()
+    ).all()
+    
+    base_url = request.host_url.rstrip('/')
+    
+    return jsonify({
+        'shares': [s.to_dict(base_url=base_url) for s in shares],
+        'count': len(shares)
+    })
+
+
+@api_bp.route('/shares', methods=['GET'])
+@login_required
+def list_my_shares():
+    """Возвращает все публичные ссылки текущего пользователя."""
+    shares = Share.query.filter_by(user_id=current_user.id).order_by(
+        Share.created_at.desc()
+    ).all()
+    
+    base_url = request.host_url.rstrip('/')
+    
+    return jsonify({
+        'shares': [s.to_dict(base_url=base_url) for s in shares],
+        'count': len(shares)
+    })
+
+
+@api_bp.route('/shares/<int:share_id>', methods=['DELETE'])
+@login_required
+def delete_share(share_id):
+    """Удаляет публичную ссылку."""
+    share = Share.query.filter_by(
+        id=share_id,
+        user_id=current_user.id
+    ).first()
+    
+    if not share:
+        return jsonify({'error': 'Ссылка не найдена'}), 404
+    
+    db.session.delete(share)
+    db.session.commit()
+    
+    return jsonify({'success': True, 'message': 'Ссылка удалена'})
+
+
+@api_bp.route('/shares/<int:share_id>/toggle', methods=['PATCH'])
+@login_required
+def toggle_share(share_id):
+    """Активирует/деактивирует публичную ссылку."""
+    share = Share.query.filter_by(
+        id=share_id,
+        user_id=current_user.id
+    ).first()
+    
+    if not share:
+        return jsonify({'error': 'Ссылка не найдена'}), 404
+    
+    share.is_active = not share.is_active
+    db.session.commit()
+    
+    base_url = request.host_url.rstrip('/')
+    
+    return jsonify({
+        'success': True,
+        'share': share.to_dict(base_url=base_url)
     })

@@ -3,6 +3,16 @@
 Инициализирует Flask, подключает базу данных и роуты.
 """
 import os
+import sys
+
+# Устанавливаем UTF-8 для вывода в консоль (для русских символов на Windows)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except (AttributeError, OSError):
+        pass
+
 from flask import Flask
 from flask_login import LoginManager
 from config import Config
@@ -39,16 +49,18 @@ def create_app():
     @login_manager.user_loader
     def load_user(user_id):
         """Загружает пользователя по ID для Flask-Login."""
-        return User.query.get(int(user_id))
+        return db.session.get(User, int(user_id))
     
     # Регистрируем blueprints
     from routes.auth import auth_bp
     from routes.api import api_bp
     from routes.main import main_bp
+    from routes.public import public_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(main_bp)
+    app.register_blueprint(public_bp)
     
     # Создаём таблицы при первом запуске
     with app.app_context():

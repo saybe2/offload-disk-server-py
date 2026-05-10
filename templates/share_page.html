@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Скачать файл - Cloud Storage{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center align-items-center min-vh-100">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow">
+                <div class="card-body p-4">
+                    <div class="text-center mb-4">
+                        <i class="bi bi-cloud-download text-primary" style="font-size: 4rem;"></i>
+                        <h2 class="mt-3">Поделились файлом</h2>
+                        <p class="text-muted">Кто-то поделился с вами файлом</p>
+                    </div>
+                    
+                    <!-- Информация о файле -->
+                    <div class="card bg-dark mb-4">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    <i class="bi bi-file-earmark-fill text-primary" style="font-size: 3rem;"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h5 class="mb-1" id="fileName">{{ share.file.original_name }}</h5>
+                                    <p class="text-muted mb-0">
+                                        <i class="bi bi-hdd me-1"></i>
+                                        <span id="fileSize">{{ share.file.format_size() }}</span>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Информация о ссылке -->
+                    <div class="row mb-4">
+                        {% if share.expires_at %}
+                        <div class="col-md-6 mb-2">
+                            <div class="card bg-dark">
+                                <div class="card-body py-2 px-3">
+                                    <small class="text-muted">
+                                        <i class="bi bi-clock me-1"></i>Действительна до
+                                    </small>
+                                    <div class="small">{{ share.expires_at.strftime('%d.%m.%Y %H:%M') }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        {% if share.max_downloads > 0 %}
+                        <div class="col-md-6 mb-2">
+                            <div class="card bg-dark">
+                                <div class="card-body py-2 px-3">
+                                    <small class="text-muted">
+                                        <i class="bi bi-download me-1"></i>Скачиваний
+                                    </small>
+                                    <div class="small">
+                                        {{ share.download_count }} / {{ share.max_downloads }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Форма скачивания -->
+                    {% if share.has_password() %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-lock-fill me-2"></i>
+                        Этот файл защищён паролем
+                    </div>
+                    
+                    <form id="downloadForm" method="POST" action="{{ url_for('public.download_share', token=share.token) }}">
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Пароль</label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="password" 
+                                   name="password" 
+                                   placeholder="Введите пароль"
+                                   required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 py-2">
+                            <i class="bi bi-download me-2"></i>Скачать файл
+                        </button>
+                    </form>
+                    {% else %}
+                    <a href="{{ url_for('public.download_share', token=share.token) }}" 
+                       class="btn btn-primary w-100 py-2">
+                        <i class="bi bi-download me-2"></i>Скачать файл
+                    </a>
+                    {% endif %}
+                    
+                    <hr class="my-4">
+                    
+                    <p class="text-center text-muted small mb-0">
+                        <i class="bi bi-shield-check me-1"></i>
+                        Файл зашифрован AES-256-GCM
+                    </p>
+                </div>
+            </div>
+            
+            <p class="text-center text-muted mt-3">
+                <a href="{{ url_for('main.index') }}" class="text-decoration-none">
+                    <i class="bi bi-cloud-fill me-1"></i>Cloud Storage
+                </a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
