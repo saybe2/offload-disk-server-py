@@ -172,6 +172,22 @@ gunicorn -w 4 -b 0.0.0.0:5000 app:app
 
 MIT License
 
-## Авторы
+## Команда разработчиков
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="https://avatars.githubusercontent.com/u/244402161?v=4" width="80" alt="Тимур" style="border-radius: 50%;">
+      <br><b>Баринов Тимур</b>
+      <br><a href="https://github.com/YaYoungFreak">GitHub</a>
+    </td>
+    <td align="center">
+      <img src="https://avatars.githubusercontent.com/u/240772441?&v=4" width="80" alt="Иван" style="border-radius: 50%;">
+      <br><b>Галчихин Иван</b>
+      <br><a href="https://github.com/saybe2">GitHub</a>
+    </td>
+  </tr>
+</table>
+
 
 Проект выполнен в рамках курса Web-разработки Яндекс.Лицея.
