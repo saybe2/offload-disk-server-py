@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block title %}Мои файлы - Cloud Storage{% endblock %}
+
+{% block navbar %}
+<nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="{{ url_for('main.app_page') }}">
+            <i class="bi bi-cloud-fill me-2"></i>Cloud Storage
+        </a>
+        
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <a class="nav-link active" href="{{ url_for('main.app_page') }}">
+                        <i class="bi bi-folder me-1"></i>Мои файлы
+                    </a>
+                </li>
+                {% if user.is_admin() %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.admin_page') }}">
+                        <i class="bi bi-gear me-1"></i>Админка
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+            
+            <div class="d-flex align-items-center">
+                <span class="text-muted me-3" id="quotaInfo">
+                    <i class="bi bi-hdd me-1"></i>
+                    <span id="usedSpace">0</span> / <span id="totalSpace">∞</span>
+                </span>
+                
+                <div class="dropdown">
+                    <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle me-1"></i>{{ user.username }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark">
+                        <li>
+                            <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#settingsModal">
+                                <i class="bi bi-gear me-2"></i>Настройки
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">
+                                <i class="bi bi-box-arrow-right me-2"></i>Выйти
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-3 col-lg-2">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <button class="btn btn-primary w-100 mb-3" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                        <i class="bi bi-cloud-upload me-2"></i>Загрузить
+                    </button>
+                    
+                    <button class="btn btn-outline-secondary w-100" id="newFolderBtn">
+                        <i class="bi bi-folder-plus me-2"></i>Новая папка
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Quick Stats -->
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-bar-chart me-2"></i>Статистика
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Файлов:</span>
+                        <span id="filesCount">0</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Папок:</span>
+                        <span id="foldersCount">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="col-md-9 col-lg-10">
+            <!-- Breadcrumb -->
+            <nav aria-label="breadcrumb" class="mb-3">
+                <ol class="breadcrumb" id="breadcrumb">
+                    <li class="breadcrumb-item">
+                        <a href="#" data-folder-id="" class="text-decoration-none">
+                            <i class="bi bi-house me-1"></i>Главная
+                        </a>
+                    </li>
+                </ol>
+            </nav>
+            
+            <!-- Files & Folders Grid -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-folder2-open me-2"></i>Содержимое</span>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary active" id="viewGrid" title="Сетка">
+                            <i class="bi bi-grid-3x3-gap"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary" id="viewList" title="Список">
+                            <i class="bi bi-list-ul"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Loading -->
+                    <div id="loading" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Empty State -->
+                    <div id="emptyState" class="text-center py-5 d-none">
+                        <i class="bi bi-folder2 text-muted" style="font-size: 4rem;"></i>
+                        <p class="text-muted mt-3">Папка пуста</p>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                            <i class="bi bi-cloud-upload me-2"></i>Загрузить файлы
+                        </button>
+                    </div>
+                    
+                    <!-- Content Grid -->
+                    <div id="contentGrid" class="row g-3 d-none">
+                        <!-- Items будут добавлены через JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <i class="bi bi-cloud-upload me-2"></i>Загрузка файлов
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="upload-area border border-dashed border-secondary rounded p-5 text-center" 
+                     id="uploadArea">
+                    <i class="bi bi-cloud-arrow-up text-primary" style="font-size: 3rem;"></i>
+                    <p class="mt-3 mb-2">Перетащите файлы сюда</p>
+                    <p class="text-muted small">или</p>
+                    <input type="file" id="fileInput" class="d-none" multiple>
+                    <button class="btn btn-outline-primary" id="selectFilesBtn">
+                        Выберите файлы
+                    </button>
+                </div>
+                
+                <!-- Upload Progress -->
+                <div id="uploadProgress" class="mt-3 d-none">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span id="uploadFileName">Загрузка...</span>
+                        <span id="uploadPercent">0%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             id="uploadProgressBar" 
+                             style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Folder Modal -->
+<div class="modal fade" id="newFolderModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <i class="bi bi-folder-plus me-2"></i>Новая папка
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" class="form-control" id="newFolderName" placeholder="Название папки">
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="createFolderBtn">Создать</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal fade" id="settingsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <i class="bi bi-gear me-2"></i>Настройки
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Смена пароля</h6>
+                <div class="mb-3">
+                    <input type="password" class="form-control" id="currentPassword" placeholder="Текущий пароль">
+                </div>
+                <div class="mb-3">
+                    <input type="password" class="form-control" id="newPassword" placeholder="Новый пароль">
+                </div>
+                <div class="mb-3">
+                    <input type="password" class="form-control" id="confirmPassword" placeholder="Подтвердите пароль">
+                </div>
+                <button class="btn btn-primary" id="changePasswordBtn">Изменить пароль</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Context Menu -->
+<div class="dropdown-menu dropdown-menu-dark" id="contextMenu" style="position: fixed; display: none;">
+    <a class="dropdown-item" href="#" id="ctxDownload">
+        <i class="bi bi-download me-2"></i>Скачать
+    </a>
+    <a class="dropdown-item" href="#" id="ctxRename">
+        <i class="bi bi-pencil me-2"></i>Переименовать
+    </a>
+    <a class="dropdown-item" href="#" id="ctxMove">
+        <i class="bi bi-folder-symlink me-2"></i>Переместить
+    </a>
+    <div class="dropdown-divider"></div>
+    <a class="dropdown-item text-danger" href="#" id="ctxDelete">
+        <i class="bi bi-trash me-2"></i>Удалить
+    </a>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .upload-area {
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border-style: dashed !important;
+    }
+    
+    .upload-area:hover, .upload-area.dragover {
+        background-color: rgba(99, 102, 241, 0.1);
+        border-color: var(--primary-color) !important;
+    }
+    
+    .file-item, .folder-item {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        background: rgba(255, 255, 255, 0.03);
+    }
+    
+    .file-item:hover, .folder-item:hover {
+        background: rgba(255, 255, 255, 0.08);
+    }
+    
+    .file-icon {
+        font-size: 2.5rem;
+    }
+    
+    .folder-icon {
+        font-size: 2.5rem;
+        color: #ffc107;
+    }
+    
+    .file-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% endblock %}
