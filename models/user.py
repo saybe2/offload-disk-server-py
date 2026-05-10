@@ -29,6 +29,8 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), default='user', nullable=False)
     quota_bytes = db.Column(db.BigInteger, default=0)  # 0 = безлимит
     used_bytes = db.Column(db.BigInteger, default=0)
+    # Поле для блокировки (UserMixin.is_active возвращает это значение)
+    active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Связи с другими таблицами
@@ -48,6 +50,11 @@ class User(UserMixin, db.Model):
     def is_admin(self):
         """Проверяет, является ли пользователь администратором."""
         return self.role == 'admin'
+    
+    @property
+    def is_active(self):
+        """Возвращает активность пользователя для Flask-Login."""
+        return bool(self.active)
     
     def has_quota_space(self, size_bytes):
         """Проверяет, есть ли место для файла указанного размера."""
@@ -81,6 +88,7 @@ class User(UserMixin, db.Model):
             'role': self.role,
             'quota_bytes': self.quota_bytes,
             'used_bytes': self.used_bytes,
+            'is_active': bool(self.active),
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
     

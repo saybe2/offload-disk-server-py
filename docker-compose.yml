@@ -1,0 +1,54 @@
+# Docker Compose для запуска Cloud Storage в production
+version: '3.8'
+
+services:
+  cloud-storage:
+    build: .
+    container_name: cloud-storage-app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      # Обязательно переопределите эти значения через .env файл!
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - MASTER_KEY=${MASTER_KEY:-32-char-master-key-CHANGE-ME!!!}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-25}
+      - CHUNK_SIZE_MB=${CHUNK_SIZE_MB:-8}
+      - PORT=5000
+      - FLASK_DEBUG=false
+    volumes:
+      # Персистентное хранилище БД и временных файлов
+      - cloud_data:/app/data
+    networks:
+      - cloud-storage-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/auth/login')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Nginx как reverse proxy (опционально)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: cloud-storage-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./certs:/etc/nginx/certs:ro
+  #   depends_on:
+  #     - cloud-storage
+  #   networks:
+  #     - cloud-storage-net
+
+volumes:
+  cloud_data:
+    driver: local
+
+networks:
+  cloud-storage-net:
+    driver: bridge

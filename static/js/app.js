@@ -44,23 +44,66 @@ const api = {
         return this.request(`/api/files${params}`);
     },
     
-    async uploadFile(file, folderId = null) {
-        const formData = new FormData();
-        formData.append('file', file);
-        if (folderId) {
-            formData.append('folder_id', folderId);
-        }
-        
-        const response = await fetch('/api/files/upload', {
-            method: 'POST',
-            body: formData
+    async uploadFile(file, folderId = null, onProgress = null) {
+        return new Promise((resolve, reject) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            if (folderId) {
+                formData.append('folder_id', folderId);
+            }
+            
+            const xhr = new XMLHttpRequest();
+            
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable && onProgress) {
+                    const percent = (e.loaded / e.total) * 100;
+                    onProgress(percent, e.loaded, e.total);
+                }
+            });
+            
+            xhr.addEventListener('load', () => {
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(data);
+                    } else {
+                        reject(new Error(data.error || 'Ошибка загрузки'));
+                    }
+                } catch (e) {
+                    reject(new Error('Некорректный ответ сервера'));
+                }
+            });
+            
+            xhr.addEventListener('error', () => {
+                reject(new Error('Ошибка сети'));
+            });
+            
+            xhr.addEventListener('abort', () => {
+                reject(new Error('Загрузка отменена'));
+            });
+            
+            xhr.open('POST', '/api/files/upload');
+            xhr.send(formData);
         });
-        
-        return response.json();
     },
     
-    async deleteFile(fileId) {
-        return this.request(`/api/files/${fileId}`, { method: 'DELETE' });
+    async deleteFile(fileId, permanent = false) {
+        const url = permanent 
+            ? `/api/files/${fileId}?permanent=1` 
+            : `/api/files/${fileId}`;
+        return this.request(url, { method: 'DELETE' });
+    },
+    
+    async restoreFile(fileId) {
+        return this.request(`/api/files/${fileId}/restore`, { method: 'POST' });
+    },
+    
+    async getTrash() {
+        return this.request('/api/trash');
+    },
+    
+    async emptyTrash() {
+        return this.request('/api/trash/empty', { method: 'DELETE' });
     },
     
     async renameFile(fileId, name) {
@@ -103,6 +146,26 @@ const api = {
             method: 'PATCH',
             body: JSON.stringify({ name })
         });
+    },
+    
+    // Превью
+    async getPreviewInfo(fileId) {
+        return this.request(`/api/files/${fileId}/preview-info`);
+    },
+    
+    // Возвращает URL для просмотра (использовать в src/href)
+    getPreviewUrl(fileId) {
+        return `/api/files/${fileId}/preview`;
+    },
+    
+    // Получает текст файла для отображения
+    async getTextPreview(fileId) {
+        const response = await fetch(`/api/files/${fileId}/preview`);
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: 'Ошибка загрузки' }));
+            throw new Error(error.error || 'Ошибка загрузки');
+        }
+        return response.json();
     },
     
     // Поиск
@@ -344,6 +407,13 @@ const ui = {
         document.getElementById('filesCount').textContent = stats.files_count || 0;
         document.getElementById('foldersCount').textContent = stats.folders_count || 0;
         
+        const trashCount = document.getElementById('trashCount');
+        if (trashCount) {
+            trashCount.textContent = stats.trashed_count || 0;
+            // Скрываем badge если 0
+            trashCount.style.display = (stats.trashed_count > 0) ? '' : 'none';
+        }
+        
         const quota = stats.quota || {};
         const usedSpace = document.getElementById('usedSpace');
         const totalSpace = document.getElementById('totalSpace');
@@ -404,7 +474,7 @@ const ui = {
      * Добавляет обработчики к элементам
      */
     attachItemHandlers() {
-        // Двойной клик - открыть папку или скачать файл
+        // Двойной клик - открыть папку или превью файла
         document.querySelectorAll('.folder-item, .file-item').forEach(item => {
             item.addEventListener('dblclick', () => {
                 const type = item.dataset.type;
@@ -413,7 +483,7 @@ const ui = {
                 if (type === 'folder') {
                     app.navigateToFolder(id);
                 } else {
-                    app.downloadFile(id);
+                    app.openPreview(id);
                 }
             });
             
@@ -590,6 +660,29 @@ const app = {
                 e.preventDefault();
                 if (state.selectedItem?.type === 'file') {
                     this.openShareModal(state.selectedItem.id);
+                }
+                this.hideContextMenu();
+            });
+        }
+        
+        // Корзина
+        const openTrashBtn = document.getElementById('openTrashBtn');
+        if (openTrashBtn) {
+            openTrashBtn.addEventListener('click', () => this.openTrash());
+        }
+        
+        const emptyTrashBtn = document.getElementById('emptyTrashBtn');
+        if (emptyTrashBtn) {
+            emptyTrashBtn.addEventListener('click', () => this.emptyTrash());
+        }
+        
+        // Контекстное меню "Открыть"
+        const ctxPreview = document.getElementById('ctxPreview');
+        if (ctxPreview) {
+            ctxPreview.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (state.selectedItem?.type === 'file') {
+                    this.openPreview(state.selectedItem.id);
                 }
                 this.hideContextMenu();
             });
@@ -838,6 +931,293 @@ const app = {
     },
     
     /**
+     * Открывает корзину
+     */
+    async openTrash() {
+        const modal = new bootstrap.Modal(document.getElementById('trashModal'));
+        modal.show();
+        await this.loadTrash();
+    },
+    
+    /**
+     * Загружает содержимое корзины
+     */
+    async loadTrash() {
+        const container = document.getElementById('trashContent');
+        const info = document.getElementById('trashInfo');
+        
+        container.innerHTML = '<p class="text-muted text-center py-4">Загрузка...</p>';
+        
+        try {
+            const result = await api.getTrash();
+            
+            if (result.count === 0) {
+                info.textContent = 'Корзина пуста';
+                container.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="bi bi-trash text-muted" style="font-size: 4rem;"></i>
+                        <p class="mt-3 text-muted">В корзине нет файлов</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            info.textContent = `Файлов в корзине: ${result.count}`;
+            
+            container.innerHTML = '';
+            result.files.forEach(file => {
+                const item = document.createElement('div');
+                item.className = 'card bg-secondary bg-opacity-25 mb-2';
+                
+                const trashedDate = file.trashed_at 
+                    ? new Date(file.trashed_at).toLocaleDateString('ru', {
+                        day: 'numeric', month: 'short', year: 'numeric'
+                      })
+                    : '';
+                
+                const icon = ui.getFileIcon(file.original_name, file.mime_type);
+                
+                item.innerHTML = `
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center flex-grow-1" style="overflow: hidden;">
+                                <i class="bi ${icon} text-primary me-3" style="font-size: 1.5rem;"></i>
+                                <div class="flex-grow-1" style="overflow: hidden;">
+                                    <div class="text-truncate" title="${this.escapeHtml(file.original_name)}">
+                                        ${this.escapeHtml(file.original_name)}
+                                    </div>
+                                    <small class="text-muted">
+                                        ${file.size_formatted} · удалён ${trashedDate}
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-success" 
+                                        onclick="app.restoreFromTrash(${file.id})" 
+                                        title="Восстановить">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </button>
+                                <button class="btn btn-outline-danger" 
+                                        onclick="app.permanentDelete(${file.id})" 
+                                        title="Удалить навсегда">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        } catch (error) {
+            container.innerHTML = `
+                <p class="text-danger text-center py-4">Ошибка: ${error.message}</p>
+            `;
+        }
+    },
+    
+    /**
+     * Восстанавливает файл из корзины
+     */
+    async restoreFromTrash(fileId) {
+        try {
+            await api.restoreFile(fileId);
+            ui.showToast('Файл восстановлен', 'success');
+            await this.loadTrash();
+            await this.loadContent(state.currentFolderId);
+            await this.loadStats();
+        } catch (error) {
+            ui.showToast('Ошибка: ' + error.message, 'error');
+        }
+    },
+    
+    /**
+     * Окончательно удаляет файл из корзины
+     */
+    async permanentDelete(fileId) {
+        if (!confirm('Удалить файл навсегда? Это действие нельзя отменить.')) return;
+        
+        try {
+            await api.deleteFile(fileId, true);
+            ui.showToast('Файл удалён навсегда', 'success');
+            await this.loadTrash();
+            await this.loadStats();
+        } catch (error) {
+            ui.showToast('Ошибка: ' + error.message, 'error');
+        }
+    },
+    
+    /**
+     * Очищает корзину
+     */
+    async emptyTrash() {
+        if (!confirm('Очистить корзину? Все файлы будут удалены навсегда!')) return;
+        
+        try {
+            const result = await api.emptyTrash();
+            ui.showToast(`Удалено: ${result.deleted_count}`, 'success');
+            await this.loadTrash();
+            await this.loadStats();
+        } catch (error) {
+            ui.showToast('Ошибка: ' + error.message, 'error');
+        }
+    },
+    
+    /**
+     * Открывает превью файла
+     */
+    async openPreview(fileId) {
+        const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+        const loading = document.getElementById('previewLoading');
+        const content = document.getElementById('previewContent');
+        const errorEl = document.getElementById('previewError');
+        const errorMsg = document.getElementById('previewErrorMessage');
+        const fileName = document.getElementById('previewFileName');
+        const downloadBtn = document.getElementById('previewDownloadBtn');
+        
+        // Сброс состояния
+        loading.classList.remove('d-none');
+        content.classList.add('d-none');
+        errorEl.classList.add('d-none');
+        content.innerHTML = '';
+        
+        modal.show();
+        
+        try {
+            // Получаем информацию о превью
+            const info = await api.getPreviewInfo(fileId);
+            const file = info.file;
+            
+            fileName.textContent = file.original_name;
+            downloadBtn.href = `/api/files/${fileId}/download`;
+            
+            if (!info.can_preview) {
+                loading.classList.add('d-none');
+                errorEl.classList.remove('d-none');
+                errorMsg.textContent = info.reason || 'Превью недоступно';
+                return;
+            }
+            
+            // Рендерим в зависимости от типа
+            await this.renderPreview(fileId, info.preview_type, file);
+            
+            loading.classList.add('d-none');
+            content.classList.remove('d-none');
+        } catch (error) {
+            loading.classList.add('d-none');
+            errorEl.classList.remove('d-none');
+            errorMsg.textContent = error.message || 'Ошибка загрузки';
+        }
+    },
+    
+    /**
+     * Рендерит содержимое превью по типу
+     */
+    async renderPreview(fileId, previewType, file) {
+        const content = document.getElementById('previewContent');
+        const url = api.getPreviewUrl(fileId);
+        
+        switch (previewType) {
+            case 'image':
+                content.innerHTML = `
+                    <div class="d-flex align-items-center justify-content-center p-3" 
+                         style="min-height: 60vh; background: #0a0a0a;">
+                        <img src="${url}" 
+                             alt="${this.escapeHtml(file.original_name)}"
+                             class="img-fluid"
+                             style="max-height: 75vh; object-fit: contain;">
+                    </div>
+                `;
+                break;
+            
+            case 'video':
+                content.innerHTML = `
+                    <div class="d-flex align-items-center justify-content-center p-3"
+                         style="background: #0a0a0a;">
+                        <video controls autoplay 
+                               style="max-width: 100%; max-height: 75vh;"
+                               class="w-100">
+                            <source src="${url}" type="${file.mime_type}">
+                            Ваш браузер не поддерживает видео.
+                        </video>
+                    </div>
+                `;
+                break;
+            
+            case 'audio':
+                content.innerHTML = `
+                    <div class="d-flex flex-column align-items-center justify-content-center p-5"
+                         style="min-height: 50vh;">
+                        <i class="bi bi-music-note-beamed text-primary" 
+                           style="font-size: 6rem;"></i>
+                        <h4 class="mt-3 text-truncate" style="max-width: 100%;">${this.escapeHtml(file.original_name)}</h4>
+                        <audio controls autoplay class="w-100 mt-4" style="max-width: 600px;">
+                            <source src="${url}" type="${file.mime_type}">
+                            Ваш браузер не поддерживает аудио.
+                        </audio>
+                    </div>
+                `;
+                break;
+            
+            case 'pdf':
+                content.innerHTML = `
+                    <div style="height: 80vh;">
+                        <iframe src="${url}" 
+                                style="width: 100%; height: 100%; border: none;"
+                                title="${this.escapeHtml(file.original_name)}">
+                        </iframe>
+                    </div>
+                `;
+                break;
+            
+            case 'text':
+                // Загружаем текст через JSON
+                const textData = await api.getTextPreview(fileId);
+                const lang = this.detectCodeLanguage(textData.extension);
+                
+                content.innerHTML = `
+                    <div class="p-3" style="max-height: 75vh; overflow: auto;">
+                        <pre class="mb-0" style="background: #1a1a2e; padding: 1.5rem; border-radius: 8px; max-height: 70vh; overflow: auto;"><code class="language-${lang}">${this.escapeHtml(textData.content)}</code></pre>
+                    </div>
+                `;
+                break;
+            
+            default:
+                content.innerHTML = `
+                    <div class="text-center p-5">
+                        <i class="bi bi-file-earmark text-muted" style="font-size: 4rem;"></i>
+                        <p class="mt-3 text-muted">Превью недоступно для этого типа файла</p>
+                    </div>
+                `;
+        }
+    },
+    
+    /**
+     * Определяет язык программирования по расширению (для подсветки)
+     */
+    detectCodeLanguage(ext) {
+        const map = {
+            'js': 'javascript', 'ts': 'typescript', 'py': 'python',
+            'java': 'java', 'cpp': 'cpp', 'c': 'c', 'h': 'c',
+            'cs': 'csharp', 'go': 'go', 'rb': 'ruby', 'php': 'php',
+            'rs': 'rust', 'kt': 'kotlin', 'swift': 'swift',
+            'html': 'html', 'css': 'css', 'json': 'json',
+            'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml',
+            'sh': 'bash', 'sql': 'sql', 'md': 'markdown'
+        };
+        return map[ext?.toLowerCase()] || 'plaintext';
+    },
+    
+    /**
+     * Экранирует HTML для безопасного отображения
+     */
+    escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    },
+    
+    /**
      * Загрузка содержимого папки
      */
     async loadContent(folderId = null) {
@@ -914,7 +1294,7 @@ const app = {
     },
     
     /**
-     * Загрузка файлов
+     * Загрузка файлов с реальным прогрессом
      */
     async uploadFiles(files) {
         const progressContainer = document.getElementById('uploadProgress');
@@ -924,30 +1304,54 @@ const app = {
         
         progressContainer.classList.remove('d-none');
         
-        for (let i = 0; i < files.length; i++) {
+        const total = files.length;
+        let succeeded = 0;
+        let failed = 0;
+        
+        for (let i = 0; i < total; i++) {
             const file = files[i];
-            fileName.textContent = file.name;
+            const prefix = total > 1 ? `[${i + 1}/${total}] ` : '';
+            fileName.textContent = prefix + file.name;
             progressBar.style.width = '0%';
             percent.textContent = '0%';
             
             try {
-                // Симуляция прогресса (реальный прогресс требует XMLHttpRequest)
-                progressBar.style.width = '50%';
-                percent.textContent = '50%';
-                
-                await api.uploadFile(file, state.currentFolderId);
+                await api.uploadFile(
+                    file, 
+                    state.currentFolderId, 
+                    (pct, loaded, totalBytes) => {
+                        progressBar.style.width = pct + '%';
+                        percent.textContent = `${Math.round(pct)}% (${ui.formatSize(loaded)} / ${ui.formatSize(totalBytes)})`;
+                    }
+                );
                 
                 progressBar.style.width = '100%';
                 percent.textContent = '100%';
+                succeeded++;
                 
-                ui.showToast(`Файл "${file.name}" загружен`, 'success');
+                if (total === 1) {
+                    ui.showToast(`Файл "${file.name}" загружен`, 'success');
+                }
             } catch (error) {
-                ui.showToast(`Ошибка загрузки "${file.name}": ${error.message}`, 'error');
+                failed++;
+                ui.showToast(`Ошибка "${file.name}": ${error.message}`, 'error');
+            }
+        }
+        
+        // Итоговое сообщение для множественной загрузки
+        if (total > 1) {
+            if (failed === 0) {
+                ui.showToast(`Загружено файлов: ${succeeded}`, 'success');
+            } else {
+                ui.showToast(`Загружено: ${succeeded}, ошибок: ${failed}`, 'warning');
             }
         }
         
         progressContainer.classList.add('d-none');
         bootstrap.Modal.getInstance(document.getElementById('uploadModal')).hide();
+        
+        // Сбрасываем input
+        document.getElementById('fileInput').value = '';
         
         await this.loadContent(state.currentFolderId);
         await this.loadStats();
@@ -973,8 +1377,10 @@ const app = {
         const isFile = state.selectedItem?.type === 'file';
         const downloadItem = document.getElementById('ctxDownload');
         const shareItem = document.getElementById('ctxShare');
+        const previewItem = document.getElementById('ctxPreview');
         if (downloadItem) downloadItem.style.display = isFile ? 'block' : 'none';
         if (shareItem) shareItem.style.display = isFile ? 'block' : 'none';
+        if (previewItem) previewItem.style.display = isFile ? 'block' : 'none';
     },
     
     /**

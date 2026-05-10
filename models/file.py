@@ -65,7 +65,8 @@ class File(db.Model):
     # Временные метки
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    deleted_at = db.Column(db.DateTime, nullable=True, index=True)  # Soft delete
+    trashed_at = db.Column(db.DateTime, nullable=True, index=True)  # В корзине
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)  # Полностью удалён
     
     @property
     def parts(self):
@@ -91,11 +92,23 @@ class File(db.Model):
         return self.status == self.STATUS_READY
     
     def is_deleted(self):
-        """Проверяет, удалён ли файл."""
+        """Проверяет, полностью удалён ли файл."""
         return self.deleted_at is not None
     
+    def is_trashed(self):
+        """Проверяет, находится ли файл в корзине."""
+        return self.trashed_at is not None and self.deleted_at is None
+    
+    def move_to_trash(self):
+        """Перемещает файл в корзину."""
+        self.trashed_at = datetime.utcnow()
+    
+    def restore_from_trash(self):
+        """Восстанавливает файл из корзины."""
+        self.trashed_at = None
+    
     def mark_deleted(self):
-        """Помечает файл как удалённый (soft delete)."""
+        """Помечает файл как полностью удалённый."""
         self.deleted_at = datetime.utcnow()
     
     def increment_downloads(self):
@@ -130,7 +143,9 @@ class File(db.Model):
             'status': self.status,
             'download_count': self.download_count,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'trashed_at': self.trashed_at.isoformat() if self.trashed_at else None,
             'is_ready': self.is_ready(),
+            'is_trashed': self.is_trashed(),
             'error': self.error if self.status == self.STATUS_ERROR else None
         }
         if include_parts:

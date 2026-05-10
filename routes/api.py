@@ -42,9 +42,10 @@ def list_files():
     sort_field = request.args.get('sort', 'date')
     sort_order = request.args.get('order', 'desc')
     
-    query = File.query.filter_by(
-        user_id=current_user.id,
-        deleted_at=None
+    query = File.query.filter(
+        File.user_id == current_user.id,
+        File.deleted_at.is_(None),
+        File.trashed_at.is_(None)  # Исключаем корзину
     )
     
     if folder_id:
@@ -112,9 +113,10 @@ def search():
     
     # Поиск файлов
     if search_type in ('files', 'all'):
-        files_query = File.query.filter_by(
-            user_id=current_user.id,
-            deleted_at=None
+        files_query = File.query.filter(
+            File.user_id == current_user.id,
+            File.deleted_at.is_(None),
+            File.trashed_at.is_(None)
         )
         
         # Поиск по имени (регистронезависимый)
@@ -344,10 +346,25 @@ def download_file(file_id):
         pass
 
 
-@api_bp.route('/files/<int:file_id>', methods=['DELETE'])
+@api_bp.route('/files/<int:file_id>/preview', methods=['GET'])
 @login_required
-def delete_file(file_id):
-    """Удаляет файл (soft delete)."""
+def preview_file(file_id):
+    """
+    Возвращает файл для просмотра в браузере (без скачивания).
+    
+    Поддерживает изображения, видео, аудио, PDF и текстовые файлы.
+    Для текстовых файлов возвращает JSON с содержимым.
+    
+    Returns:
+        Файл inline или JSON с текстом
+    """
+    from services.preview import (
+        get_preview_type,
+        can_preview,
+        get_content_type,
+        is_inline_safe
+    )
+    
     file_record = File.query.filter_by(
         id=file_id,
         user_id=current_user.id,
@@ -357,22 +374,253 @@ def delete_file(file_id):
     if not file_record:
         return jsonify({'error': 'Файл не найден'}), 404
     
-    # Удаляем из Discord
+    if not file_record.is_ready():
+        return jsonify({'error': 'Файл ещё не готов'}), 400
+    
+    # Проверяем, можно ли превью
+    can_view, reason = can_preview(
+        file_record.original_name,
+        file_record.mime_type,
+        file_record.size
+    )
+    if not can_view:
+        return jsonify({'error': reason}), 415
+    
+    preview_type = get_preview_type(
+        file_record.original_name,
+        file_record.mime_type
+    )
+    
+    # Создаём временный файл для отдачи
+    Config.init_dirs()
+    temp_path = os.path.join(
+        Config.UPLOAD_TEMP_DIR,
+        f'preview_{current_user.id}_{file_record.id}_{file_record.name}'
+    )
+    
     try:
         storage = get_storage_service()
-        storage.delete_file({'parts': file_record.parts})
-    except Exception:
-        pass  # Продолжаем даже при ошибке
+        
+        file_info = {
+            'parts': file_record.parts,
+            'iv': file_record.iv,
+            'auth_tag': file_record.auth_tag
+        }
+        
+        storage.download_file(file_info, temp_path)
+        
+        # Регистрируем просмотр (как скачивание тоже)
+        file_record.increment_downloads()
+        db.session.commit()
+        
+        content_type = get_content_type(
+            file_record.original_name,
+            file_record.mime_type,
+            preview_type
+        )
+        
+        # Текстовые файлы возвращаем как JSON
+        if preview_type == 'text':
+            try:
+                with open(temp_path, 'rb') as f:
+                    raw = f.read()
+                
+                # Пытаемся декодировать как UTF-8
+                try:
+                    content = raw.decode('utf-8')
+                except UnicodeDecodeError:
+                    # Пробуем cp1251 для русских файлов
+                    try:
+                        content = raw.decode('cp1251')
+                    except UnicodeDecodeError:
+                        content = raw.decode('utf-8', errors='replace')
+                
+                return jsonify({
+                    'type': 'text',
+                    'content': content,
+                    'filename': file_record.original_name,
+                    'size': file_record.size,
+                    'extension': file_record.get_extension()
+                })
+            except Exception as e:
+                return jsonify({'error': f'Ошибка чтения файла: {str(e)}'}), 500
+            finally:
+                # Удаляем временный файл сразу для текста
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+        
+        # Бинарные файлы отдаём через send_file
+        return send_file(
+            temp_path,
+            as_attachment=False,  # inline для просмотра
+            download_name=file_record.original_name,
+            mimetype=content_type,
+            conditional=True  # Поддержка Range запросов для видео
+        )
+        
+    except Exception as e:
+        return jsonify({'error': f'Ошибка превью: {str(e)}'}), 500
+
+
+@api_bp.route('/files/<int:file_id>/preview-info', methods=['GET'])
+@login_required
+def preview_info(file_id):
+    """
+    Возвращает информацию о возможности превью файла.
     
-    # Soft delete
-    file_record.mark_deleted()
+    Используется фронтендом перед открытием просмотрщика.
+    """
+    from services.preview import get_preview_type, can_preview
     
-    # Возвращаем место пользователю
-    current_user.remove_used_space(file_record.size)
+    file_record = File.query.filter_by(
+        id=file_id,
+        user_id=current_user.id,
+        deleted_at=None
+    ).first()
+    
+    if not file_record:
+        return jsonify({'error': 'Файл не найден'}), 404
+    
+    preview_type = get_preview_type(
+        file_record.original_name,
+        file_record.mime_type
+    )
+    can_view, reason = can_preview(
+        file_record.original_name,
+        file_record.mime_type,
+        file_record.size
+    )
+    
+    return jsonify({
+        'preview_type': preview_type,
+        'can_preview': can_view,
+        'reason': reason if not can_view else None,
+        'file': file_record.to_dict()
+    })
+
+
+@api_bp.route('/files/<int:file_id>', methods=['DELETE'])
+@login_required
+def delete_file(file_id):
+    """
+    Перемещает файл в корзину (soft delete).
+    
+    Query params:
+        permanent: '1' для окончательного удаления
+    """
+    permanent = request.args.get('permanent') == '1'
+    
+    file_record = File.query.filter_by(
+        id=file_id,
+        user_id=current_user.id,
+        deleted_at=None
+    ).first()
+    
+    if not file_record:
+        return jsonify({'error': 'Файл не найден'}), 404
+    
+    if permanent:
+        # Окончательное удаление - удаляем из Discord
+        try:
+            storage = get_storage_service()
+            storage.delete_file({'parts': file_record.parts})
+        except Exception:
+            pass  # Продолжаем даже при ошибке
+        
+        file_record.mark_deleted()
+        
+        # Возвращаем место пользователю
+        current_user.remove_used_space(file_record.size)
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Файл окончательно удалён'})
+    else:
+        # Перемещаем в корзину
+        file_record.move_to_trash()
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Файл перемещён в корзину'})
+
+
+@api_bp.route('/files/<int:file_id>/restore', methods=['POST'])
+@login_required
+def restore_file(file_id):
+    """Восстанавливает файл из корзины."""
+    file_record = File.query.filter_by(
+        id=file_id,
+        user_id=current_user.id,
+        deleted_at=None
+    ).first()
+    
+    if not file_record:
+        return jsonify({'error': 'Файл не найден'}), 404
+    
+    if not file_record.is_trashed():
+        return jsonify({'error': 'Файл не в корзине'}), 400
+    
+    file_record.restore_from_trash()
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': 'Файл восстановлен',
+        'file': file_record.to_dict()
+    })
+
+
+@api_bp.route('/trash', methods=['GET'])
+@login_required
+def list_trash():
+    """Возвращает файлы в корзине."""
+    files = File.query.filter(
+        File.user_id == current_user.id,
+        File.deleted_at.is_(None),
+        File.trashed_at.isnot(None)
+    ).order_by(File.trashed_at.desc()).all()
+    
+    return jsonify({
+        'files': [f.to_dict() for f in files],
+        'count': len(files)
+    })
+
+
+@api_bp.route('/trash/empty', methods=['DELETE'])
+@login_required
+def empty_trash():
+    """Очищает корзину (окончательно удаляет все файлы)."""
+    files = File.query.filter(
+        File.user_id == current_user.id,
+        File.deleted_at.is_(None),
+        File.trashed_at.isnot(None)
+    ).all()
+    
+    storage = get_storage_service()
+    deleted_count = 0
+    freed_space = 0
+    
+    for file_record in files:
+        try:
+            storage.delete_file({'parts': file_record.parts})
+        except Exception:
+            pass
+        
+        freed_space += file_record.size
+        file_record.mark_deleted()
+        deleted_count += 1
+    
+    if freed_space > 0:
+        current_user.remove_used_space(freed_space)
     
     db.session.commit()
     
-    return jsonify({'success': True, 'message': 'Файл удалён'})
+    return jsonify({
+        'success': True,
+        'message': f'Удалено файлов: {deleted_count}',
+        'deleted_count': deleted_count,
+        'freed_bytes': freed_space
+    })
 
 
 @api_bp.route('/files/<int:file_id>/rename', methods=['PATCH'])
@@ -542,12 +790,21 @@ def delete_folder(folder_id):
         deleted_at=None
     ).all()
     
-    storage = get_storage_service()
-    for file_record in files:
+    # Создаём storage только если есть файлы для удаления
+    storage = None
+    if files:
         try:
-            storage.delete_file({'parts': file_record.parts})
+            storage = get_storage_service()
         except Exception:
-            pass
+            # Без storage не сможем удалить с Discord, но БД очистим
+            storage = None
+    
+    for file_record in files:
+        if storage:
+            try:
+                storage.delete_file({'parts': file_record.parts})
+            except Exception:
+                pass
         file_record.mark_deleted()
         current_user.remove_used_space(file_record.size)
     
@@ -598,9 +855,16 @@ def rename_folder(folder_id):
 @login_required
 def get_stats():
     """Возвращает статистику пользователя."""
-    files_count = File.query.filter_by(
-        user_id=current_user.id,
-        deleted_at=None
+    files_count = File.query.filter(
+        File.user_id == current_user.id,
+        File.deleted_at.is_(None),
+        File.trashed_at.is_(None)
+    ).count()
+    
+    trashed_count = File.query.filter(
+        File.user_id == current_user.id,
+        File.deleted_at.is_(None),
+        File.trashed_at.isnot(None)
     ).count()
     
     folders_count = Folder.query.filter_by(
@@ -609,6 +873,7 @@ def get_stats():
     
     return jsonify({
         'files_count': files_count,
+        'trashed_count': trashed_count,
         'folders_count': folders_count,
         'quota': current_user.get_quota_info()
     })

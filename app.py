@@ -56,11 +56,13 @@ def create_app():
     from routes.api import api_bp
     from routes.main import main_bp
     from routes.public import public_bp
+    from routes.admin import admin_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(public_bp)
+    app.register_blueprint(admin_bp)
     
     # Создаём таблицы при первом запуске
     with app.app_context():

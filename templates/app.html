@@ -76,6 +76,16 @@
                 </div>
             </div>
             
+            <!-- Trash Button -->
+            <div class="card mb-3">
+                <div class="card-body p-2">
+                    <button class="btn btn-outline-secondary w-100 text-start" id="openTrashBtn">
+                        <i class="bi bi-trash me-2"></i>Корзина
+                        <span class="badge bg-secondary float-end" id="trashCount">0</span>
+                    </button>
+                </div>
+            </div>
+            
             <!-- Quick Stats -->
             <div class="card">
                 <div class="card-header">
@@ -264,6 +274,9 @@
 
 <!-- Context Menu -->
 <div class="dropdown-menu dropdown-menu-dark" id="contextMenu" style="position: fixed; display: none;">
+    <a class="dropdown-item" href="#" id="ctxPreview">
+        <i class="bi bi-eye me-2"></i>Открыть
+    </a>
     <a class="dropdown-item" href="#" id="ctxDownload">
         <i class="bi bi-download me-2"></i>Скачать
     </a>
@@ -277,6 +290,69 @@
     <a class="dropdown-item text-danger" href="#" id="ctxDelete">
         <i class="bi bi-trash me-2"></i>Удалить
     </a>
+</div>
+
+<!-- Trash Modal -->
+<div class="modal fade" id="trashModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <i class="bi bi-trash me-2"></i>Корзина
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between mb-3">
+                    <p class="text-muted mb-0" id="trashInfo">Загрузка...</p>
+                    <button class="btn btn-danger btn-sm" id="emptyTrashBtn">
+                        <i class="bi bi-trash3 me-1"></i>Очистить корзину
+                    </button>
+                </div>
+                
+                <div id="trashContent">
+                    <p class="text-muted text-center py-4">Загрузка...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-truncate" id="previewTitle">
+                    <i class="bi bi-eye me-2"></i><span id="previewFileName">Просмотр</span>
+                </h5>
+                <div class="d-flex gap-2">
+                    <a href="#" class="btn btn-sm btn-outline-light" id="previewDownloadBtn" title="Скачать">
+                        <i class="bi bi-download"></i>
+                    </a>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body p-0" id="previewBody" style="min-height: 60vh;">
+                <!-- Loading -->
+                <div id="previewLoading" class="d-flex align-items-center justify-content-center" style="height: 60vh;">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-3 text-muted">Загрузка превью...</p>
+                    </div>
+                </div>
+                
+                <!-- Содержимое будет добавлено через JS -->
+                <div id="previewContent" class="d-none"></div>
+                
+                <!-- Ошибка -->
+                <div id="previewError" class="d-none p-5 text-center">
+                    <i class="bi bi-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
+                    <p class="mt-3" id="previewErrorMessage">Не удалось загрузить превью</p>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Share Modal -->

@@ -1,0 +1,41 @@
+# Файлы и директории, которые НЕ нужно копировать в Docker образ
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.pytest_cache
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Тесты и документация (опционально)
+tests/
+docs/
+*.md
+!README.md
+
+# Локальные данные
+data/
+*.db
+*.log
+.env
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
