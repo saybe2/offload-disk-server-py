@@ -12,67 +12,164 @@
     
     <style>
         :root {
-            --primary-color: #6366f1;
-            --bg-dark: #1a1a2e;
-            --bg-card: #16213e;
-            --text-primary: #e2e8f0;
-            --text-secondary: #94a3b8;
+            --primary-color: #8b5cf6;
+            --primary-hover: #a78bfa;
+            --primary-glow: rgba(139, 92, 246, 0.35);
+            --bg-dark: #0f1117;
+            --bg-card: #1a1d28;
+            --bg-card-hover: #22262f;
+            --bg-elevated: #252830;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-accent: rgba(139, 92, 246, 0.3);
+            --text-primary: #edf0f7;
+            --text-secondary: #8b92a5;
         }
         
         body {
-            background-color: var(--bg-dark);
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+            background-attachment: fixed;
             color: var(--text-primary);
             min-height: 100vh;
         }
         
         .card {
             background-color: var(--bg-card);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        }
+        
+        .card-header {
+            background-color: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        .card-header:first-child {
+            border-radius: 12px 12px 0 0;
         }
         
         .btn-primary {
-            background-color: var(--primary-color);
-            border-color: var(--primary-color);
+            background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+            border: none;
+            box-shadow: 0 2px 10px rgba(139, 92, 246, 0.3);
+            font-weight: 500;
         }
         
         .btn-primary:hover {
-            background-color: #5558e3;
-            border-color: #5558e3;
+            background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.45);
+            transform: translateY(-1px);
+        }
+        
+        .btn-primary:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 4px rgba(139, 92, 246, 0.3);
+        }
+        
+        .btn-outline-primary {
+            color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        .btn-outline-primary:hover {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            box-shadow: 0 2px 10px var(--primary-glow);
+        }
+        
+        .btn-outline-secondary {
+            color: var(--text-secondary);
+            border-color: var(--border-color);
+        }
+        
+        .btn-outline-secondary:hover {
+            background-color: var(--bg-elevated);
+            border-color: rgba(255, 255, 255, 0.15);
+            color: var(--text-primary);
+        }
+        
+        .btn-outline-light {
+            color: var(--text-secondary);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        
+        .btn-outline-light:hover {
+            background-color: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.25);
+            color: var(--text-primary);
         }
         
         .form-control, .form-select {
-            background-color: rgba(255, 255, 255, 0.05);
-            border-color: rgba(255, 255, 255, 0.1);
+            background-color: rgba(255, 255, 255, 0.04);
+            border-color: var(--border-color);
             color: var(--text-primary);
+            border-radius: 8px;
+            transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
         }
         
         .form-control:focus, .form-select:focus {
-            background-color: rgba(255, 255, 255, 0.1);
+            background-color: rgba(255, 255, 255, 0.07);
             border-color: var(--primary-color);
             color: var(--text-primary);
-            box-shadow: 0 0 0 0.25rem rgba(99, 102, 241, 0.25);
+            box-shadow: 0 0 0 3px var(--primary-glow);
         }
         
         .form-control::placeholder {
             color: var(--text-secondary);
+            opacity: 0.7;
+        }
+        
+        .input-group-text {
+            background-color: transparent;
+            border-color: var(--border-color);
+            color: var(--text-secondary);
+        }
+        
+        .form-check-input {
+            background-color: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        .form-check-input:checked {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        .form-check-input:focus {
+            box-shadow: 0 0 0 3px var(--primary-glow);
+            border-color: var(--primary-color);
         }
         
         .navbar {
-            background-color: var(--bg-card) !important;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            background-color: rgba(26, 29, 40, 0.85) !important;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
         }
         
         .navbar-brand {
             color: var(--text-primary) !important;
             font-weight: 600;
+            letter-spacing: -0.01em;
         }
         
         .nav-link {
             color: var(--text-secondary) !important;
+            transition: color 0.2s;
+            border-radius: 6px;
+            padding: 0.4rem 0.75rem !important;
         }
         
-        .nav-link:hover, .nav-link.active {
+        .nav-link:hover {
             color: var(--text-primary) !important;
+            background-color: rgba(255, 255, 255, 0.04);
+        }
+        
+        .nav-link.active {
+            color: var(--primary-color) !important;
+            background-color: rgba(139, 92, 246, 0.08);
         }
         
         .text-muted {
@@ -81,14 +178,175 @@
         
         a {
             color: var(--primary-color);
+            transition: color 0.15s;
         }
         
         a:hover {
-            color: #8183f4;
+            color: var(--primary-hover);
         }
         
         .alert {
             border: none;
+            border-radius: 10px;
+        }
+        
+        .alert-warning {
+            background-color: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border-left: 3px solid #f59e0b;
+        }
+        
+        .alert-success {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: #6ee7b7;
+            border-left: 3px solid #10b981;
+        }
+        
+        .alert-danger {
+            background-color: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border-left: 3px solid #ef4444;
+        }
+        
+        .modal-content {
+            background-color: var(--bg-card) !important;
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal-header {
+            border-bottom-color: var(--border-color) !important;
+        }
+        
+        .modal-footer {
+            border-top-color: var(--border-color) !important;
+        }
+        
+        .dropdown-menu-dark {
+            background-color: var(--bg-elevated);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+        
+        .dropdown-item:hover, .dropdown-item:focus {
+            background-color: rgba(255, 255, 255, 0.06);
+        }
+        
+        .progress {
+            background-color: rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            height: 8px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            background: linear-gradient(90deg, #7c3aed, #8b5cf6, #a78bfa);
+            border-radius: 6px;
+            transition: width 0.3s ease;
+        }
+        
+        .badge.bg-secondary {
+            background-color: var(--bg-elevated) !important;
+            color: var(--text-secondary);
+        }
+        
+        .spinner-border.text-primary {
+            color: var(--primary-color) !important;
+        }
+        
+        hr {
+            border-color: var(--border-color);
+            opacity: 1;
+        }
+        
+        .breadcrumb {
+            background-color: transparent;
+            margin-bottom: 0;
+        }
+        
+        .breadcrumb-item a {
+            color: var(--text-secondary);
+        }
+        
+        .breadcrumb-item a:hover {
+            color: var(--text-primary);
+        }
+        
+        .breadcrumb-item.active {
+            color: var(--text-primary);
+        }
+        
+        .breadcrumb-item + .breadcrumb-item::before {
+            color: var(--text-secondary);
+            opacity: 0.5;
+        }
+        
+        .table-dark {
+            --bs-table-bg: transparent;
+            --bs-table-border-color: var(--border-color);
+            --bs-table-hover-bg: rgba(255, 255, 255, 0.03);
+            --bs-table-color: var(--text-primary);
+        }
+        
+        .table-dark th {
+            background-color: var(--bg-elevated);
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+        }
+        
+        .form-label {
+            color: var(--text-primary);
+        }
+        
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--text-primary);
+        }
+        
+        .card-body {
+            color: var(--text-primary);
+        }
+        
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .text-primary {
+            color: var(--primary-color) !important;
+        }
+        
+        small, span, p, div, li, td, th, label, strong {
+            color: inherit;
+        }
+        
+        .btn-secondary {
+            background-color: var(--bg-elevated);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+        
+        .btn-secondary:hover {
+            background-color: var(--bg-card-hover);
+            border-color: rgba(255, 255, 255, 0.15);
+            color: var(--text-primary);
         }
     </style>
     

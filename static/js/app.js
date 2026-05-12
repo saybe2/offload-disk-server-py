@@ -1120,7 +1120,7 @@ const app = {
             case 'image':
                 content.innerHTML = `
                     <div class="d-flex align-items-center justify-content-center p-3" 
-                         style="min-height: 60vh; background: #0a0a0a;">
+                         style="min-height: 60vh; background: #0d0f14;">
                         <img src="${url}" 
                              alt="${this.escapeHtml(file.original_name)}"
                              class="img-fluid"
@@ -1132,7 +1132,7 @@ const app = {
             case 'video':
                 content.innerHTML = `
                     <div class="d-flex align-items-center justify-content-center p-3"
-                         style="background: #0a0a0a;">
+                         style="background: #0d0f14;">
                         <video controls autoplay 
                                style="max-width: 100%; max-height: 75vh;"
                                class="w-100">
@@ -1176,7 +1176,7 @@ const app = {
                 
                 content.innerHTML = `
                     <div class="p-3" style="max-height: 75vh; overflow: auto;">
-                        <pre class="mb-0" style="background: #1a1a2e; padding: 1.5rem; border-radius: 8px; max-height: 70vh; overflow: auto;"><code class="language-${lang}">${this.escapeHtml(textData.content)}</code></pre>
+                        <pre class="mb-0" style="background: #141720; padding: 1.5rem; border-radius: 10px; max-height: 70vh; overflow: auto; border: 1px solid rgba(255,255,255,0.06);"><code class="language-${lang}">${this.escapeHtml(textData.content)}</code></pre>
                     </div>
                 `;
                 break;

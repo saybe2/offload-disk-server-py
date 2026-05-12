@@ -47,16 +47,19 @@
     cursor: pointer;
     transition: all 0.2s ease;
     border: 2px solid transparent;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
 .file-card:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.06);
     transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
 .file-card.selected {
-    border-color: var(--primary-color, #6366f1);
-    background: rgba(99, 102, 241, 0.1);
+    border-color: var(--primary-color, #8b5cf6);
+    background: rgba(139, 92, 246, 0.1);
+    box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.2);
 }
 
 .file-card .icon {
@@ -70,23 +73,24 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 100%;
+    color: var(--text-primary, #edf0f7);
 }
 
 .file-card .meta {
     font-size: 0.75rem;
-    color: #94a3b8;
+    color: var(--text-secondary, #8b92a5);
     margin-top: 0.25rem;
 }
 
 /* ===== Иконки файлов по типам ===== */
-.file-icon-image { color: #10b981; }
-.file-icon-video { color: #f59e0b; }
-.file-icon-audio { color: #8b5cf6; }
-.file-icon-document { color: #3b82f6; }
-.file-icon-archive { color: #6366f1; }
-.file-icon-code { color: #ec4899; }
-.file-icon-folder { color: #fbbf24; }
-.file-icon-default { color: #64748b; }
+.file-icon-image { color: #34d399; }
+.file-icon-video { color: #fbbf24; }
+.file-icon-audio { color: #a78bfa; }
+.file-icon-document { color: #60a5fa; }
+.file-icon-archive { color: #8b5cf6; }
+.file-icon-code { color: #f472b6; }
+.file-icon-folder { color: #fcd34d; }
+.file-icon-default { color: #6b7280; }
 
 /* ===== Drag & Drop зона ===== */
 .drop-zone {
@@ -100,8 +104,8 @@
 
 .drop-zone:hover,
 .drop-zone.active {
-    border-color: var(--primary-color, #6366f1);
-    background: rgba(99, 102, 241, 0.05);
+    border-color: var(--primary-color, #8b5cf6);
+    background: rgba(139, 92, 246, 0.06);
 }
 
 .drop-zone.active {
@@ -110,7 +114,7 @@
 
 .drop-zone .icon {
     font-size: 4rem;
-    color: var(--primary-color, #6366f1);
+    color: var(--primary-color, #8b5cf6);
     margin-bottom: 1rem;
 }
 
@@ -144,12 +148,12 @@
 /* ===== Контекстное меню ===== */
 .context-menu {
     position: fixed;
-    background: #1e293b;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
+    background: var(--bg-elevated, #252830);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+    border-radius: 10px;
     padding: 0.5rem 0;
     min-width: 180px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
     z-index: 1000;
 }
 
@@ -157,7 +161,7 @@
     display: flex;
     align-items: center;
     padding: 0.5rem 1rem;
-    color: #e2e8f0;
+    color: var(--text-primary, #edf0f7);
     text-decoration: none;
     transition: background 0.15s ease;
 }
@@ -209,22 +213,22 @@
 }
 
 .breadcrumb-item {
-    color: #94a3b8;
+    color: var(--text-secondary, #8b92a5);
     text-decoration: none;
     white-space: nowrap;
     transition: color 0.15s ease;
 }
 
 .breadcrumb-item:hover {
-    color: #e2e8f0;
+    color: var(--text-primary, #edf0f7);
 }
 
 .breadcrumb-item.active {
-    color: #e2e8f0;
+    color: var(--text-primary, #edf0f7);
 }
 
 .breadcrumb-separator {
-    color: #475569;
+    color: rgba(255, 255, 255, 0.2);
 }
 
 /* ===== Пустое состояние ===== */
@@ -235,18 +239,18 @@
 
 .empty-state .icon {
     font-size: 5rem;
-    color: #475569;
+    color: rgba(255, 255, 255, 0.15);
     margin-bottom: 1.5rem;
 }
 
 .empty-state .title {
     font-size: 1.25rem;
-    color: #e2e8f0;
+    color: var(--text-primary, #edf0f7);
     margin-bottom: 0.5rem;
 }
 
 .empty-state .description {
-    color: #94a3b8;
+    color: var(--text-secondary, #8b92a5);
     margin-bottom: 1.5rem;
 }
 
@@ -262,7 +266,7 @@
     height: 100%;
     border-radius: 4px;
     transition: width 0.3s ease;
-    background: linear-gradient(90deg, #6366f1, #8b5cf6);
+    background: linear-gradient(90deg, #7c3aed, #8b5cf6, #a78bfa);
 }
 
 .quota-bar .fill.warning {
@@ -285,8 +289,8 @@
     left: 50%;
     transform: translateX(-50%);
     padding: 0.5rem 0.75rem;
-    background: #1e293b;
-    color: #e2e8f0;
+    background: var(--bg-elevated, #252830);
+    color: var(--text-primary, #edf0f7);
     font-size: 0.75rem;
     border-radius: 6px;
     white-space: nowrap;
@@ -295,6 +299,8 @@
     transition: all 0.2s ease;
     pointer-events: none;
     margin-bottom: 0.5rem;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 [data-tooltip]:hover::after {

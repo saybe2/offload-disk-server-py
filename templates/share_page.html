@@ -15,7 +15,7 @@
                     </div>
                     
                     <!-- Информация о файле -->
-                    <div class="card bg-dark mb-4">
+                    <div class="card mb-4" style="background-color: var(--bg-elevated);">
                         <div class="card-body">
                             <div class="d-flex align-items-center">
                                 <div class="me-3">
@@ -36,7 +36,7 @@
                     <div class="row mb-4">
                         {% if share.expires_at %}
                         <div class="col-md-6 mb-2">
-                            <div class="card bg-dark">
+                            <div class="card" style="background-color: var(--bg-elevated);">
                                 <div class="card-body py-2 px-3">
                                     <small class="text-muted">
                                         <i class="bi bi-clock me-1"></i>Действительна до
@@ -49,7 +49,7 @@
                         
                         {% if share.max_downloads > 0 %}
                         <div class="col-md-6 mb-2">
-                            <div class="card bg-dark">
+                            <div class="card" style="background-color: var(--bg-elevated);">
                                 <div class="card-body py-2 px-3">
                                     <small class="text-muted">
                                         <i class="bi bi-download me-1"></i>Скачиваний
