@@ -12,5 +12,6 @@ from models.user import User
 from models.folder import Folder
 from models.file import File
 from models.share import Share
+from models.audit_log import AuditLog
 
-__all__ = ['db', 'User', 'Folder', 'File', 'Share']
+__all__ = ['db', 'User', 'Folder', 'File', 'Share', 'AuditLog']

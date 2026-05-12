@@ -4,7 +4,8 @@
 """
 from flask import Blueprint, request, jsonify, render_template, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
-from models import db, User
+from models import db, User, AuditLog
+from services.audit import AuditService
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -72,8 +73,16 @@ def register():
         db.session.add(user)
         db.session.commit()
         
+        # Логируем регистрацию
+        AuditService.log_auth(
+            AuditLog.ACTION_REGISTER,
+            details={'username': user.username, 'role': user.role},
+            user_id=user.id
+        )
+        
         # Автоматический вход после регистрации
         login_user(user)
+        AuditService.log_auth(AuditLog.ACTION_LOGIN, user_id=user.id)
         
         if request.is_json:
             return jsonify({
@@ -112,12 +121,33 @@ def login():
         user = User.query.filter_by(username=username).first()
         
         if user is None or not user.check_password(password):
+            # Логируем неудачный вход
+            AuditService.log_auth(
+                AuditLog.ACTION_LOGIN_FAILED,
+                details={'username': username},
+                success=False,
+                user_id=user.id if user else None
+            )
             if request.is_json:
                 return jsonify({'error': 'Неверное имя пользователя или пароль'}), 401
             flash('Неверное имя пользователя или пароль', 'error')
             return render_template('login.html', username=username)
         
-        login_user(user, remember=remember)
+        # Проверяем что пользователь не заблокирован
+        if hasattr(user, 'active') and not user.active:
+            AuditService.log_auth(
+                AuditLog.ACTION_LOGIN_FAILED,
+                details={'username': username, 'reason': 'account_blocked'},
+                success=False,
+                user_id=user.id
+            )
+            if request.is_json:
+                return jsonify({'error': 'Аккаунт заблокирован'}), 403
+            flash('Аккаунт заблокирован', 'error')
+            return render_template('login.html', username=username)
+        
+        login_user(user, remember=bool(remember))
+        AuditService.log_auth(AuditLog.ACTION_LOGIN, user_id=user.id)
         
         if request.is_json:
             return jsonify({
@@ -139,6 +169,8 @@ def login():
 @login_required
 def logout():
     """Выход из системы."""
+    # Логируем до logout_user(), чтобы получить ID пользователя
+    AuditService.log_auth(AuditLog.ACTION_LOGOUT)
     logout_user()
     
     if request.is_json:
@@ -185,5 +217,7 @@ def change_password():
     # Обновляем пароль
     current_user.set_password(new_password)
     db.session.commit()
+    
+    AuditService.log_auth(AuditLog.ACTION_PASSWORD_CHANGE)
     
     return jsonify({'success': True, 'message': 'Пароль успешно изменён'})

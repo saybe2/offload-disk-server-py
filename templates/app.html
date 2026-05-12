@@ -41,6 +41,11 @@
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark">
                         <li>
+                            <a class="dropdown-item" href="#" id="openAuditLogBtn">
+                                <i class="bi bi-clock-history me-2"></i>История действий
+                            </a>
+                        </li>
+                        <li>
                             <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#settingsModal">
                                 <i class="bi bi-gear me-2"></i>Настройки
                             </a>
@@ -272,6 +277,47 @@
     </div>
 </div>
 
+<!-- Audit Log Modal -->
+<div class="modal fade" id="auditLogModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <i class="bi bi-clock-history me-2"></i>История действий
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex gap-2 mb-3 flex-wrap">
+                    <select class="form-select form-select-sm" id="auditActionFilter" style="max-width: 240px;">
+                        <option value="">Все действия</option>
+                    </select>
+                    <select class="form-select form-select-sm" id="auditResourceFilter" style="max-width: 180px;">
+                        <option value="">Все ресурсы</option>
+                        <option value="file">Файлы</option>
+                        <option value="folder">Папки</option>
+                        <option value="share">Публичные ссылки</option>
+                        <option value="auth">Авторизация</option>
+                    </select>
+                    <button class="btn btn-outline-light btn-sm" id="refreshAuditBtn" title="Обновить">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+                
+                <div id="auditLogContent">
+                    <p class="text-muted text-center py-4">Загрузка...</p>
+                </div>
+                
+                <div class="text-center mt-3" id="auditLoadMoreContainer" style="display: none;">
+                    <button class="btn btn-outline-light" id="auditLoadMoreBtn">
+                        <i class="bi bi-arrow-down me-1"></i>Загрузить ещё
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Context Menu -->
 <div class="dropdown-menu dropdown-menu-dark" id="contextMenu" style="position: fixed; display: none;">
     <a class="dropdown-item" href="#" id="ctxPreview">
@@ -487,6 +533,55 @@
     
     .file-size, .file-meta, .file-date {
         color: var(--text-secondary) !important;
+    }
+    
+    /* ===== Множественный выбор ===== */
+    .file-item.selected, .folder-item.selected {
+        background: rgba(99, 102, 241, 0.18) !important;
+        border-color: #6366f1 !important;
+        box-shadow: 0 0 0 1px #6366f1, 0 4px 12px rgba(99, 102, 241, 0.25) !important;
+    }
+    
+    /* ===== Drag-and-Drop ===== */
+    .file-item.dragging, .folder-item.dragging {
+        opacity: 0.4;
+        transform: scale(0.95);
+    }
+    
+    body.drag-in-progress {
+        cursor: grabbing !important;
+    }
+    
+    body.drag-in-progress * {
+        cursor: grabbing !important;
+    }
+    
+    /* Drop-зона: папка готова принять файлы */
+    .folder-item.drop-target {
+        background: rgba(34, 197, 94, 0.18) !important;
+        border-color: #22c55e !important;
+        box-shadow: 0 0 0 2px #22c55e, 0 4px 16px rgba(34, 197, 94, 0.35) !important;
+        transform: scale(1.05);
+    }
+    
+    /* Drop-зона на breadcrumbs */
+    .breadcrumb-drop-target {
+        background: rgba(34, 197, 94, 0.2) !important;
+        color: #22c55e !important;
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-weight: 600;
+    }
+    
+    /* Курсор "grab" на draggable элементах */
+    .file-item[draggable="true"],
+    .folder-item[draggable="true"] {
+        cursor: grab;
+    }
+    
+    .file-item[draggable="true"]:active,
+    .folder-item[draggable="true"]:active {
+        cursor: grabbing;
     }
 </style>
 {% endblock %}

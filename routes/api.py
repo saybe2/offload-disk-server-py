@@ -8,8 +8,9 @@ from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 from sqlalchemy import or_
-from models import db, File, Folder, User, Share
+from models import db, File, Folder, User, Share, AuditLog
 from services.storage import StorageService
+from services.audit import AuditService
 from config import Config
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -270,6 +271,13 @@ def upload_file():
             
             db.session.commit()
             
+            # Логируем успешную загрузку
+            AuditService.log_file(
+                AuditLog.ACTION_FILE_UPLOAD,
+                file_record,
+                details={'size': file_size, 'folder_id': folder_id}
+            )
+            
             return jsonify({
                 'success': True,
                 'file': file_record.to_dict()
@@ -279,6 +287,13 @@ def upload_file():
             file_record.status = File.STATUS_ERROR
             file_record.error = str(e)
             db.session.commit()
+            # Логируем неудачную загрузку
+            AuditService.log_file(
+                AuditLog.ACTION_FILE_UPLOAD,
+                file_record,
+                details={'error': str(e)},
+                success=False
+            )
             return jsonify({'error': f'Ошибка загрузки: {str(e)}'}), 500
             
     finally:
@@ -329,6 +344,9 @@ def download_file(file_id):
         # Увеличиваем счётчик скачиваний
         file_record.increment_downloads()
         db.session.commit()
+        
+        # Логируем скачивание
+        AuditService.log_file(AuditLog.ACTION_FILE_DOWNLOAD, file_record)
         
         return send_file(
             temp_path,
@@ -536,11 +554,13 @@ def delete_file(file_id):
         current_user.remove_used_space(file_record.size)
         
         db.session.commit()
+        AuditService.log_file(AuditLog.ACTION_FILE_DELETE, file_record)
         return jsonify({'success': True, 'message': 'Файл окончательно удалён'})
     else:
         # Перемещаем в корзину
         file_record.move_to_trash()
         db.session.commit()
+        AuditService.log_file(AuditLog.ACTION_FILE_TRASH, file_record)
         return jsonify({'success': True, 'message': 'Файл перемещён в корзину'})
 
 
@@ -562,6 +582,8 @@ def restore_file(file_id):
     
     file_record.restore_from_trash()
     db.session.commit()
+    
+    AuditService.log_file(AuditLog.ACTION_FILE_RESTORE, file_record)
     
     return jsonify({
         'success': True,
@@ -615,6 +637,13 @@ def empty_trash():
     
     db.session.commit()
     
+    # Логируем очистку корзины
+    AuditService.log(
+        action=AuditLog.ACTION_TRASH_EMPTY,
+        resource_type=AuditLog.RESOURCE_SYSTEM,
+        details={'deleted_count': deleted_count, 'freed_bytes': freed_space}
+    )
+    
     return jsonify({
         'success': True,
         'message': f'Удалено файлов: {deleted_count}',
@@ -642,9 +671,16 @@ def rename_file(file_id):
     if not new_name:
         return jsonify({'error': 'Имя не может быть пустым'}), 400
     
+    old_name = file_record.original_name
     file_record.name = secure_filename(new_name)
     file_record.original_name = new_name
     db.session.commit()
+    
+    AuditService.log_file(
+        AuditLog.ACTION_FILE_RENAME,
+        file_record,
+        details={'old_name': old_name, 'new_name': new_name}
+    )
     
     return jsonify({'success': True, 'file': file_record.to_dict()})
 
@@ -673,8 +709,15 @@ def move_file(file_id):
         if not folder:
             return jsonify({'error': 'Папка не найдена'}), 404
     
+    old_folder_id = file_record.folder_id
     file_record.folder_id = folder_id
     db.session.commit()
+    
+    AuditService.log_file(
+        AuditLog.ACTION_FILE_MOVE,
+        file_record,
+        details={'old_folder_id': old_folder_id, 'new_folder_id': folder_id}
+    )
     
     return jsonify({'success': True, 'file': file_record.to_dict()})
 
@@ -748,6 +791,12 @@ def create_folder():
     db.session.add(folder)
     db.session.commit()
     
+    AuditService.log_folder(
+        AuditLog.ACTION_FOLDER_CREATE,
+        folder,
+        details={'parent_id': parent_id}
+    )
+    
     return jsonify({
         'success': True,
         'folder': folder.to_dict()
@@ -809,8 +858,19 @@ def delete_folder(folder_id):
         current_user.remove_used_space(file_record.size)
     
     # Удаляем папку (каскадно удалит подпапки)
+    folder_name = folder.name
+    folder_id_saved = folder.id
     db.session.delete(folder)
     db.session.commit()
+    
+    # Логируем удаление папки (передаём None, передаём название через details)
+    AuditService.log(
+        action=AuditLog.ACTION_FOLDER_DELETE,
+        resource_type=AuditLog.RESOURCE_FOLDER,
+        resource_id=folder_id_saved,
+        resource_name=folder_name,
+        details={'files_deleted': len(files)}
+    )
     
     return jsonify({'success': True, 'message': 'Папка удалена'})
 
@@ -843,8 +903,81 @@ def rename_folder(folder_id):
     if existing:
         return jsonify({'error': 'Папка с таким именем уже существует'}), 400
     
+    old_name = folder.name
     folder.name = new_name
     db.session.commit()
+    
+    AuditService.log_folder(
+        AuditLog.ACTION_FOLDER_RENAME,
+        folder,
+        details={'old_name': old_name, 'new_name': new_name}
+    )
+    
+    return jsonify({'success': True, 'folder': folder.to_dict()})
+
+
+@api_bp.route('/folders/<int:folder_id>/move', methods=['PATCH'])
+@login_required
+def move_folder(folder_id):
+    """
+    Перемещает папку в другую папку (меняет parent_id).
+    
+    Body params:
+        parent_id: ID новой родительской папки (null = корень)
+    """
+    folder = Folder.query.filter_by(
+        id=folder_id,
+        user_id=current_user.id
+    ).first()
+    
+    if not folder:
+        return jsonify({'error': 'Папка не найдена'}), 404
+    
+    data = request.get_json() or {}
+    new_parent_id = data.get('parent_id')  # None = корень
+    
+    # Нельзя переместить папку саму в себя
+    if new_parent_id == folder_id:
+        return jsonify({'error': 'Нельзя переместить папку саму в себя'}), 400
+    
+    # Проверяем что новая родительская папка существует и принадлежит пользователю
+    if new_parent_id is not None:
+        new_parent = Folder.query.filter_by(
+            id=new_parent_id,
+            user_id=current_user.id
+        ).first()
+        if not new_parent:
+            return jsonify({'error': 'Целевая папка не найдена'}), 404
+        
+        # Нельзя переместить папку в её же потомка (создаст цикл)
+        if folder.is_ancestor_of(new_parent):
+            return jsonify({'error': 'Нельзя переместить папку в её же подпапку'}), 400
+    
+    # Проверяем уникальность имени в новой родительской папке
+    existing = Folder.query.filter_by(
+        user_id=current_user.id,
+        parent_id=new_parent_id,
+        name=folder.name
+    ).filter(Folder.id != folder_id).first()
+    
+    if existing:
+        return jsonify({
+            'error': f'Папка "{folder.name}" уже существует в целевой папке'
+        }), 400
+    
+    old_parent_id = folder.parent_id
+    folder.parent_id = new_parent_id
+    db.session.commit()
+    
+    AuditService.log_folder(
+        AuditLog.ACTION_FOLDER_RENAME,  # Используем тот же тип (можно добавить FOLDER_MOVE)
+        folder,
+        details={
+            'action': 'move',
+            'old_parent_id': old_parent_id,
+            'new_parent_id': new_parent_id
+        }
+    )
     
     return jsonify({'success': True, 'folder': folder.to_dict()})
 
@@ -876,6 +1009,54 @@ def get_stats():
         'trashed_count': trashed_count,
         'folders_count': folders_count,
         'quota': current_user.get_quota_info()
+    })
+
+
+# ==================== AUDIT LOG ====================
+
+@api_bp.route('/audit-logs', methods=['GET'])
+@login_required
+def my_audit_logs():
+    """
+    Возвращает историю действий текущего пользователя.
+    
+    Query params:
+        limit: Максимум записей (по умолчанию 50)
+        offset: Смещение для пагинации
+        action: Фильтр по типу действия
+        resource_type: Фильтр по типу ресурса
+    """
+    limit = min(request.args.get('limit', 50, type=int), 200)
+    offset = max(request.args.get('offset', 0, type=int), 0)
+    action = request.args.get('action')
+    resource_type = request.args.get('resource_type')
+    
+    logs, total = AuditService.get_user_logs(
+        user_id=current_user.id,
+        limit=limit,
+        offset=offset,
+        action=action,
+        resource_type=resource_type
+    )
+    
+    return jsonify({
+        'logs': [log.to_dict() for log in logs],
+        'total': total,
+        'limit': limit,
+        'offset': offset,
+        'has_more': (offset + len(logs)) < total
+    })
+
+
+@api_bp.route('/audit-logs/actions', methods=['GET'])
+@login_required
+def audit_actions_list():
+    """Возвращает список доступных типов действий для фильтра."""
+    return jsonify({
+        'actions': [
+            {'value': action, 'label': label}
+            for action, label in AuditLog.ACTION_LABELS.items()
+        ]
     })
 
 
@@ -935,6 +1116,17 @@ def create_share(file_id):
     
     db.session.add(share)
     db.session.commit()
+    
+    AuditService.log_share(
+        AuditLog.ACTION_SHARE_CREATE,
+        share,
+        details={
+            'file_id': file_record.id,
+            'has_password': bool(password),
+            'expires_in_days': expires_in_days,
+            'max_downloads': max_downloads
+        }
+    )
     
     # Формируем полный URL
     base_url = request.host_url.rstrip('/')
@@ -998,6 +1190,9 @@ def delete_share(share_id):
     if not share:
         return jsonify({'error': 'Ссылка не найдена'}), 404
     
+    # Логируем до удаления
+    AuditService.log_share(AuditLog.ACTION_SHARE_DELETE, share)
+    
     db.session.delete(share)
     db.session.commit()
     
@@ -1018,6 +1213,12 @@ def toggle_share(share_id):
     
     share.is_active = not share.is_active
     db.session.commit()
+    
+    AuditService.log_share(
+        AuditLog.ACTION_SHARE_TOGGLE,
+        share,
+        details={'new_state': 'active' if share.is_active else 'disabled'}
+    )
     
     base_url = request.host_url.rstrip('/')
     

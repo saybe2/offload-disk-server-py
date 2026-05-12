@@ -4,8 +4,9 @@
 """
 import os
 from flask import Blueprint, request, jsonify, render_template, send_file, abort
-from models import db, Share, File
+from models import db, Share, File, AuditLog
 from services.storage import StorageService
+from services.audit import AuditService
 from config import Config
 
 public_bp = Blueprint('public', __name__)
@@ -35,6 +36,14 @@ def share_page(token):
         return render_template('share_error.html',
                              error=reason,
                              error_code=410), 410
+    
+    # Логируем доступ к ссылке (от имени владельца, чтобы он видел)
+    AuditService.log_share(
+        AuditLog.ACTION_SHARE_ACCESS,
+        share,
+        details={'token': token[:8]},
+        user_id=share.user_id
+    )
     
     return render_template('share_page.html', share=share)
 
@@ -98,6 +107,14 @@ def download_share(token):
         share.increment_download()
         file_record.increment_downloads()
         db.session.commit()
+        
+        # Логируем скачивание по публичной ссылке
+        AuditService.log_share(
+            AuditLog.ACTION_SHARE_DOWNLOAD,
+            share,
+            details={'token': token[:8], 'download_count': share.download_count},
+            user_id=share.user_id
+        )
         
         return send_file(
             temp_path,

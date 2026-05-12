@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from sqlalchemy import func
-from models import db, User, File, Folder, Share
+from models import db, User, File, Folder, Share, AuditLog
+from services.audit import AuditService
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -133,8 +134,15 @@ def update_user_quota(user_id):
     except (TypeError, ValueError):
         return jsonify({'error': 'Некорректное значение квоты'}), 400
     
+    old_quota = user.quota_bytes
     user.quota_bytes = quota_bytes
     db.session.commit()
+    
+    AuditService.log_admin(
+        AuditLog.ACTION_ADMIN_USER_QUOTA,
+        user,
+        details={'old_quota': old_quota, 'new_quota': quota_bytes}
+    )
     
     return jsonify({
         'success': True,
@@ -165,8 +173,15 @@ def update_user_role(user_id):
     if role not in ('user', 'admin'):
         return jsonify({'error': 'Роль должна быть user или admin'}), 400
     
+    old_role = user.role
     user.role = role
     db.session.commit()
+    
+    AuditService.log_admin(
+        AuditLog.ACTION_ADMIN_USER_ROLE,
+        user,
+        details={'old_role': old_role, 'new_role': role}
+    )
     
     return jsonify({
         'success': True,
@@ -191,6 +206,12 @@ def toggle_user(user_id):
     
     action = 'разблокирован' if user.active else 'заблокирован'
     
+    AuditService.log_admin(
+        AuditLog.ACTION_ADMIN_USER_TOGGLE,
+        user,
+        details={'new_state': 'active' if user.active else 'blocked'}
+    )
+    
     return jsonify({
         'success': True,
         'message': f'Пользователь {action}',
@@ -214,6 +235,16 @@ def delete_user(user_id):
         return jsonify({'error': 'Пользователь не найден'}), 404
     
     username = user.username
+    user_id_saved = user.id
+    
+    # Логируем до удаления (user_id будет SET NULL после удаления)
+    AuditService.log(
+        action=AuditLog.ACTION_ADMIN_USER_DELETE,
+        resource_type=AuditLog.RESOURCE_USER,
+        resource_id=user_id_saved,
+        resource_name=username,
+        details={'deleted_user_id': user_id_saved}
+    )
     
     # Каскадное удаление через relationship cascade
     db.session.delete(user)
@@ -246,6 +277,8 @@ def reset_user_password(user_id):
     
     user.set_password(new_password)
     db.session.commit()
+    
+    AuditService.log_admin(AuditLog.ACTION_ADMIN_USER_PASSWORD_RESET, user)
     
     return jsonify({
         'success': True,
@@ -335,4 +368,78 @@ def list_user_files(user_id):
         'user': user.to_dict(),
         'files': [f.to_dict() for f in files],
         'count': len(files)
+    })
+
+
+# ==================== AUDIT LOG (ADMIN) ====================
+
+@admin_bp.route('/api/audit-logs', methods=['GET'])
+@admin_required
+def all_audit_logs():
+    """
+    Возвращает все логи действий в системе (для админа).
+    
+    Query params:
+        limit: Максимум записей (по умолчанию 100, максимум 500)
+        offset: Смещение
+        action: Фильтр по действию
+        resource_type: Фильтр по типу ресурса
+        user_id: Фильтр по пользователю
+        success: Фильтр по успешности ('true'/'false')
+    """
+    limit = min(request.args.get('limit', 100, type=int), 500)
+    offset = max(request.args.get('offset', 0, type=int), 0)
+    action = request.args.get('action')
+    resource_type = request.args.get('resource_type')
+    user_id = request.args.get('user_id', type=int)
+    
+    success_param = request.args.get('success')
+    success = None
+    if success_param == 'true':
+        success = True
+    elif success_param == 'false':
+        success = False
+    
+    logs, total = AuditService.get_all_logs(
+        limit=limit,
+        offset=offset,
+        action=action,
+        resource_type=resource_type,
+        user_id=user_id,
+        success=success
+    )
+    
+    return jsonify({
+        'logs': [log.to_dict(include_user=True) for log in logs],
+        'total': total,
+        'limit': limit,
+        'offset': offset,
+        'has_more': (offset + len(logs)) < total
+    })
+
+
+@admin_bp.route('/api/users/<int:user_id>/audit-logs', methods=['GET'])
+@admin_required
+def user_audit_logs(user_id):
+    """Возвращает логи действий конкретного пользователя."""
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'error': 'Пользователь не найден'}), 404
+    
+    limit = min(request.args.get('limit', 100, type=int), 500)
+    offset = max(request.args.get('offset', 0, type=int), 0)
+    
+    logs, total = AuditService.get_user_logs(
+        user_id=user_id,
+        limit=limit,
+        offset=offset
+    )
+    
+    return jsonify({
+        'user': user.to_dict(),
+        'logs': [log.to_dict() for log in logs],
+        'total': total,
+        'limit': limit,
+        'offset': offset,
+        'has_more': (offset + len(logs)) < total
     })
