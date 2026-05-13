@@ -108,6 +108,25 @@
             border-radius: 8px;
             transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
         }
+
+        /* Тёмная схема для нативных дропдаунов <option> */
+        .form-select {
+            color-scheme: dark;
+        }
+
+        /* Опции внутри select — без этого на Windows/Chrome
+           текст белый на белом фоне и выглядит нечитаемо */
+        .form-select option,
+        .form-select optgroup {
+            background-color: var(--bg-elevated);
+            color: var(--text-primary);
+        }
+
+        .form-select option:checked,
+        .form-select option:hover {
+            background-color: var(--primary-color);
+            color: #fff;
+        }
         
         .form-control:focus, .form-select:focus {
             background-color: rgba(255, 255, 255, 0.07);
@@ -250,6 +269,19 @@
         .badge.bg-secondary {
             background-color: var(--bg-elevated) !important;
             color: var(--text-secondary);
+        }
+
+        /* Кастомные бейджи для ролей пользователей */
+        .badge.badge-admin {
+            background-color: #7c3aed !important;
+            color: #fff;
+            box-shadow: 0 1px 4px rgba(124, 58, 237, 0.4);
+        }
+
+        .badge.badge-owner {
+            background-color: #dc2626 !important;
+            color: #fff;
+            box-shadow: 0 1px 4px rgba(220, 38, 38, 0.4);
         }
         
         .spinner-border.text-primary {

@@ -239,10 +239,10 @@ const admin = {
                 const row = document.createElement('tr');
 
                 let roleBadge = user.role === 'admin'
-                    ? '<span class="badge bg-warning">Админ</span>'
+                    ? '<span class="badge badge-admin">Админ</span>'
                     : '<span class="badge bg-secondary">Юзер</span>';
                 if (user.is_owner) {
-                    roleBadge += ' <span class="badge bg-info" title="Аккаунт владельца защищён от изменений">'
+                    roleBadge += ' <span class="badge badge-owner" title="Аккаунт владельца защищён от изменений">'
                         + '<i class="bi bi-shield-lock me-1"></i>Владелец</span>';
                 }
 
