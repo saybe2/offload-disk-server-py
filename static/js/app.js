@@ -9,7 +9,7 @@ const state = {
     files: [],
     folders: [],
     selectedItem: null,
-    viewMode: 'grid',  // 'grid' или 'list'
+    viewMode: (typeof localStorage !== 'undefined' && localStorage.getItem('viewMode')) || 'grid',  // 'grid' или 'list'
     searchActive: false,
     searchQuery: '',
     searchTimer: null,
@@ -474,22 +474,39 @@ const ui = {
      */
     renderContent(folders, files) {
         const container = document.getElementById('contentGrid');
-        
+
         if (folders.length === 0 && files.length === 0) {
             this.showEmpty(true);
             return;
         }
-        
+
         this.showEmpty(false);
         container.innerHTML = '';
-        
-        // Рендерим папки (draggable + droppable)
+
+        if (state.viewMode === 'list') {
+            this.renderList(container, folders, files);
+        } else {
+            this.renderGrid(container, folders, files);
+        }
+
+        // Обработчики единые для обоих режимов
+        this.attachItemHandlers();
+    },
+
+    /**
+     * Рендер в виде сетки (карточки)
+     */
+    renderGrid(container, folders, files) {
+        container.classList.remove('view-list');
+        container.classList.add('view-grid');
+
+        // Папки (draggable + droppable)
         folders.forEach(folder => {
             const col = document.createElement('div');
             col.className = 'col-6 col-md-4 col-lg-3 col-xl-2';
             col.innerHTML = `
-                <div class="folder-item text-center" 
-                     data-type="folder" 
+                <div class="folder-item text-center"
+                     data-type="folder"
                      data-id="${folder.id}"
                      draggable="true">
                     <i class="bi bi-folder-fill folder-icon"></i>
@@ -499,15 +516,15 @@ const ui = {
             `;
             container.appendChild(col);
         });
-        
-        // Рендерим файлы (только draggable - на файл нельзя дропнуть)
+
+        // Файлы
         files.forEach(file => {
             const icon = this.getFileIcon(file.original_name, file.mime_type);
             const col = document.createElement('div');
             col.className = 'col-6 col-md-4 col-lg-3 col-xl-2';
             col.innerHTML = `
-                <div class="file-item text-center" 
-                     data-type="file" 
+                <div class="file-item text-center"
+                     data-type="file"
                      data-id="${file.id}"
                      draggable="true">
                     <i class="bi ${icon} file-icon text-primary"></i>
@@ -518,9 +535,80 @@ const ui = {
             `;
             container.appendChild(col);
         });
-        
-        // Добавляем обработчики
-        this.attachItemHandlers();
+    },
+
+    /**
+     * Рендер в виде списка (таблица)
+     */
+    renderList(container, folders, files) {
+        container.classList.remove('view-grid');
+        container.classList.add('view-list');
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'col-12';
+
+        const formatDate = (iso) => {
+            if (!iso) return '';
+            try {
+                return new Date(iso).toLocaleDateString('ru', {
+                    day: 'numeric', month: 'short', year: 'numeric'
+                });
+            } catch (e) { return ''; }
+        };
+
+        let rowsHtml = '';
+
+        folders.forEach(folder => {
+            rowsHtml += `
+                <tr class="folder-item"
+                    data-type="folder"
+                    data-id="${folder.id}"
+                    draggable="true">
+                    <td class="list-icon"><i class="bi bi-folder-fill folder-icon-sm"></i></td>
+                    <td class="list-name" title="${folder.name}">${folder.name}</td>
+                    <td class="list-meta">${folder.files_count || 0} файлов</td>
+                    <td class="list-meta">—</td>
+                    <td class="list-meta">${formatDate(folder.created_at)}</td>
+                </tr>
+            `;
+        });
+
+        files.forEach(file => {
+            const icon = this.getFileIcon(file.original_name, file.mime_type);
+            const status = file.status !== 'ready'
+                ? `<span class="badge bg-warning ms-2">Обработка...</span>` : '';
+            rowsHtml += `
+                <tr class="file-item"
+                    data-type="file"
+                    data-id="${file.id}"
+                    draggable="true">
+                    <td class="list-icon"><i class="bi ${icon} text-primary file-icon-sm"></i></td>
+                    <td class="list-name" title="${file.original_name}">${file.original_name}${status}</td>
+                    <td class="list-meta">Файл</td>
+                    <td class="list-meta">${file.size_formatted || ''}</td>
+                    <td class="list-meta">${formatDate(file.created_at)}</td>
+                </tr>
+            `;
+        });
+
+        wrapper.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-dark table-hover align-middle items-table mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width: 48px;"></th>
+                            <th>Имя</th>
+                            <th style="width: 140px;">Тип</th>
+                            <th style="width: 120px;">Размер</th>
+                            <th style="width: 140px;">Дата</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            </div>
+        `;
+
+        container.appendChild(wrapper);
     },
     
     /**
@@ -751,14 +839,27 @@ const app = {
         
         // Скрытие контекстного меню при клике
         document.addEventListener('click', () => this.hideContextMenu());
-        
+
+        // Переключение вида (сетка/список)
+        const viewGridBtn = document.getElementById('viewGrid');
+        const viewListBtn = document.getElementById('viewList');
+        if (viewGridBtn) viewGridBtn.addEventListener('click', () => this.setViewMode('grid'));
+        if (viewListBtn) viewListBtn.addEventListener('click', () => this.setViewMode('list'));
+        // Применяем сохранённое состояние кнопок
+        this.applyViewModeButtons();
+
         // Клик по пустой области — снимает выделение
         const contentGrid = document.getElementById('contentGrid');
         if (contentGrid) {
             contentGrid.addEventListener('click', (e) => {
-                // Только если кликнули непосредственно на контейнер (не на дочерний элемент)
-                if (e.target === contentGrid || e.target.classList.contains('col-6') || 
-                    e.target.classList.contains('col-md-4')) {
+                // Только если клик пришёл по контейнеру или пустой обёртке колонки
+                if (e.target === contentGrid ||
+                    (e.target.classList && (
+                        e.target.classList.contains('col-6') ||
+                        e.target.classList.contains('col-md-4') ||
+                        e.target.classList.contains('col-12') ||
+                        e.target.classList.contains('table-responsive')
+                    ))) {
                     this.clearSelection();
                 }
             });
@@ -1867,6 +1968,33 @@ const app = {
         } catch (error) {
             console.error('Ошибка загрузки статистики:', error);
         }
+    },
+
+    /**
+     * Переключает режим отображения (сетка/список) и перерисовывает контент.
+     */
+    setViewMode(mode) {
+        if (mode !== 'grid' && mode !== 'list') return;
+        if (state.viewMode === mode) return;
+
+        state.viewMode = mode;
+        try { localStorage.setItem('viewMode', mode); } catch (e) {}
+        this.applyViewModeButtons();
+
+        // Перерисовываем текущий список без повторного сетевого запроса
+        ui.renderContent(state.folders, state.files);
+    },
+
+    /**
+     * Синхронизирует визуальное состояние кнопок с текущим режимом.
+     */
+    applyViewModeButtons() {
+        const gridBtn = document.getElementById('viewGrid');
+        const listBtn = document.getElementById('viewList');
+        if (!gridBtn || !listBtn) return;
+
+        gridBtn.classList.toggle('active', state.viewMode === 'grid');
+        listBtn.classList.toggle('active', state.viewMode === 'list');
     },
     
     /**

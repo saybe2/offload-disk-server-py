@@ -11,3 +11,4 @@ instance/
 .idea/
 .vscode/
 *.log
+DEPLOY.md
