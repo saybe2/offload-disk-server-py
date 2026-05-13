@@ -237,19 +237,47 @@ const admin = {
             tbody.innerHTML = '';
             result.users.forEach(user => {
                 const row = document.createElement('tr');
-                
-                const roleBadge = user.role === 'admin' 
-                    ? '<span class="badge bg-warning">Админ</span>' 
+
+                let roleBadge = user.role === 'admin'
+                    ? '<span class="badge bg-warning">Админ</span>'
                     : '<span class="badge bg-secondary">Юзер</span>';
-                
-                const statusBadge = user.is_active 
-                    ? '<span class="badge bg-success">Активен</span>' 
+                if (user.is_owner) {
+                    roleBadge += ' <span class="badge bg-info" title="Аккаунт владельца защищён от изменений">'
+                        + '<i class="bi bi-shield-lock me-1"></i>Владелец</span>';
+                }
+
+                const statusBadge = user.is_active
+                    ? '<span class="badge bg-success">Активен</span>'
                     : '<span class="badge bg-danger">Заблокирован</span>';
-                
-                const quota = user.quota_bytes === 0 
-                    ? '∞' 
+
+                const quota = user.quota_bytes === 0
+                    ? '∞'
                     : adminUtils.formatSize(user.quota_bytes);
-                
+
+                // Аккаунт владельца защищён от любых модификаций
+                const protectedTitle = 'Аккаунт владельца защищён';
+                const disabledAttr = user.is_owner ? 'disabled' : '';
+
+                const quotaBtn = user.is_owner
+                    ? `<button class="btn btn-outline-primary" disabled title="${protectedTitle}"><i class="bi bi-hdd"></i></button>`
+                    : `<button class="btn btn-outline-primary" onclick="admin.openQuotaModal(${user.id})" title="Изменить квоту"><i class="bi bi-hdd"></i></button>`;
+
+                const roleBtn = user.is_owner
+                    ? `<button class="btn btn-outline-warning" disabled title="${protectedTitle}"><i class="bi bi-person-badge"></i></button>`
+                    : `<button class="btn btn-outline-warning" onclick="admin.toggleRole(${user.id})" title="Изменить роль"><i class="bi bi-person-badge"></i></button>`;
+
+                const passwordBtn = user.is_owner
+                    ? `<button class="btn btn-outline-secondary" disabled title="${protectedTitle}"><i class="bi bi-key"></i></button>`
+                    : `<button class="btn btn-outline-secondary" onclick="admin.openResetPasswordModal(${user.id})" title="Сбросить пароль"><i class="bi bi-key"></i></button>`;
+
+                const toggleBtn = user.is_owner
+                    ? `<button class="btn btn-outline-danger" disabled title="${protectedTitle}"><i class="bi bi-lock"></i></button>`
+                    : `<button class="btn btn-outline-${user.is_active ? 'danger' : 'success'}" onclick="admin.toggleUser(${user.id})" title="${user.is_active ? 'Заблокировать' : 'Разблокировать'}"><i class="bi bi-${user.is_active ? 'lock' : 'unlock'}"></i></button>`;
+
+                const deleteBtn = user.is_owner
+                    ? `<button class="btn btn-outline-danger" disabled title="${protectedTitle}"><i class="bi bi-trash"></i></button>`
+                    : `<button class="btn btn-outline-danger" onclick="admin.deleteUser(${user.id})" title="Удалить"><i class="bi bi-trash"></i></button>`;
+
                 row.innerHTML = `
                     <td>${user.id}</td>
                     <td><strong>${adminUtils.escapeHtml(user.username)}</strong></td>
@@ -261,31 +289,11 @@ const admin = {
                     <td><small class="text-muted">${adminUtils.formatDate(user.created_at)}</small></td>
                     <td>
                         <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-primary" 
-                                    onclick="admin.openQuotaModal(${user.id})" 
-                                    title="Изменить квоту">
-                                <i class="bi bi-hdd"></i>
-                            </button>
-                            <button class="btn btn-outline-warning" 
-                                    onclick="admin.toggleRole(${user.id})" 
-                                    title="Изменить роль">
-                                <i class="bi bi-person-badge"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" 
-                                    onclick="admin.openResetPasswordModal(${user.id})" 
-                                    title="Сбросить пароль">
-                                <i class="bi bi-key"></i>
-                            </button>
-                            <button class="btn btn-outline-${user.is_active ? 'danger' : 'success'}" 
-                                    onclick="admin.toggleUser(${user.id})" 
-                                    title="${user.is_active ? 'Заблокировать' : 'Разблокировать'}">
-                                <i class="bi bi-${user.is_active ? 'lock' : 'unlock'}"></i>
-                            </button>
-                            <button class="btn btn-outline-danger" 
-                                    onclick="admin.deleteUser(${user.id})" 
-                                    title="Удалить">
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            ${quotaBtn}
+                            ${roleBtn}
+                            ${passwordBtn}
+                            ${toggleBtn}
+                            ${deleteBtn}
                         </div>
                     </td>
                 `;

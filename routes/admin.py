@@ -24,6 +24,26 @@ def admin_required(f):
     return decorated_function
 
 
+def _is_owner_user(user):
+    """Проверяет, является ли пользователь владельцем системы."""
+    return user is not None and user.is_owner()
+
+
+def _block_if_owner(user, action_label='изменить'):
+    """
+    Возвращает JSON-ответ с ошибкой 403, если переданный пользователь — владелец.
+    Иначе возвращает None.
+
+    Используется для защиты аккаунта владельца (id=1) от модификации
+    другими администраторами.
+    """
+    if _is_owner_user(user):
+        return jsonify({
+            'error': f'Нельзя {action_label} аккаунт владельца системы'
+        }), 403
+    return None
+
+
 # ==================== ПОЛЬЗОВАТЕЛИ ====================
 
 @admin_bp.route('/api/users', methods=['GET'])
@@ -120,7 +140,12 @@ def update_user_quota(user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'Пользователь не найден'}), 404
-    
+
+    # Защита аккаунта владельца от изменения квоты другими админами
+    blocked = _block_if_owner(user, 'изменить квоту')
+    if blocked:
+        return blocked
+
     data = request.get_json() or {}
     quota_bytes = data.get('quota_bytes')
     
@@ -166,7 +191,12 @@ def update_user_role(user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'Пользователь не найден'}), 404
-    
+
+    # Защита аккаунта владельца от смены роли
+    blocked = _block_if_owner(user, 'изменить роль')
+    if blocked:
+        return blocked
+
     data = request.get_json() or {}
     role = data.get('role', '').strip().lower()
     
@@ -200,7 +230,12 @@ def toggle_user(user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'Пользователь не найден'}), 404
-    
+
+    # Защита аккаунта владельца от блокировки
+    blocked = _block_if_owner(user, 'заблокировать')
+    if blocked:
+        return blocked
+
     user.active = not user.active
     db.session.commit()
     
@@ -233,7 +268,12 @@ def delete_user(user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'Пользователь не найден'}), 404
-    
+
+    # Защита аккаунта владельца от удаления
+    blocked = _block_if_owner(user, 'удалить')
+    if blocked:
+        return blocked
+
     username = user.username
     user_id_saved = user.id
     
@@ -268,7 +308,12 @@ def reset_user_password(user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'Пользователь не найден'}), 404
-    
+
+    # Защита аккаунта владельца от сброса пароля другими админами
+    blocked = _block_if_owner(user, 'сбросить пароль')
+    if blocked:
+        return blocked
+
     data = request.get_json() or {}
     new_password = data.get('new_password', '')
     

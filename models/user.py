@@ -50,6 +50,16 @@ class User(UserMixin, db.Model):
     def is_admin(self):
         """Проверяет, является ли пользователь администратором."""
         return self.role == 'admin'
+
+    def is_owner(self):
+        """
+        Проверяет, является ли пользователь владельцем системы.
+
+        Владелец — первый пользователь системы (id == 1). Этот аккаунт
+        защищён от модификации другими администраторами: его нельзя
+        заблокировать, удалить, сменить ему роль, пароль или квоту.
+        """
+        return self.id == 1
     
     @property
     def is_active(self):
@@ -89,6 +99,7 @@ class User(UserMixin, db.Model):
             'quota_bytes': self.quota_bytes,
             'used_bytes': self.used_bytes,
             'is_active': bool(self.active),
+            'is_owner': self.is_owner(),
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
     
